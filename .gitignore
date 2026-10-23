@@ -1,0 +1,25 @@
+# Secrets — never commit
+.env
+*.key
+secrets.toml
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Vector database (rebuilt by retrieval/build_index.py)
+chroma_db/
+
+# Chat logs — we never store conversations
+logs/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

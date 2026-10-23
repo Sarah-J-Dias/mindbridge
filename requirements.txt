@@ -1,0 +1,6 @@
+anthropic
+chromadb
+sentence-transformers
+streamlit
+python-dotenv
+pandas
