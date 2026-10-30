@@ -15,6 +15,7 @@ import csv
 import html
 import re
 import ssl
+import subprocess
 import sys
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -41,6 +42,9 @@ ALLOWED_DOMAINS = {
     "www.nami.org",
     "medlineplus.gov",
     "www.medlineplus.gov",
+    "pmc.ncbi.nlm.nih.gov",
+    "www.ncbi.nlm.nih.gov",
+    "ncbi.nlm.nih.gov",
     "uhs.berkeley.edu",
     "www.uhs.berkeley.edu",
     "caps.umich.edu",
@@ -119,6 +123,20 @@ SEARCH_ORGANIZATIONS = [
             "substance abuse",
         ],
     },
+    {
+        "name": "PubMed Central / NCBI",
+        "domain": "ncbi.nlm.nih.gov",
+        "topics": [
+            "depression",
+            "anxiety disorders",
+            "stress",
+            "post traumatic stress disorder",
+            "sleep disorders",
+            "suicide prevention",
+            "mental health",
+            "substance use",
+        ],
+    },
 ]
 
 
@@ -167,12 +185,79 @@ def slugify(value: str) -> str:
 def is_allowed_domain(url: str) -> bool:
     try:
         netloc = urlparse(url).netloc.lower()
+        path = urlparse(url).path.lower()
     except Exception:
         return False
     if not netloc:
         return False
+
+    if "pubmed.ncbi.nlm.nih.gov" in netloc:
+        return False
+
     domain = netloc.replace("www.", "")
-    return domain in ALLOWED_DOMAINS or any(netloc.endswith(f".{allowed}") for allowed in ALLOWED_DOMAINS)
+    if domain in ALLOWED_DOMAINS or any(netloc.endswith(f".{allowed}") for allowed in ALLOWED_DOMAINS):
+        if "ncbi.nlm.nih.gov" in netloc and "/pmc/" not in path and "/articles/pmc" not in path and "/articles/PMC" not in path:
+            return False
+        return True
+    return False
+
+
+def is_pmc_full_text_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        netloc = parsed.netloc.lower()
+        path = parsed.path.lower()
+    except Exception:
+        return False
+
+    if "pubmed.ncbi.nlm.nih.gov" in netloc:
+        return False
+    if "ncbi.nlm.nih.gov" not in netloc and "pmc.ncbi.nlm.nih.gov" not in netloc:
+        return False
+    return bool(re.search(r"/(?:pmc/)?articles/pmc\d+/?$", path))
+
+
+def curl_fetch_text(url: str) -> str:
+    cmd = [
+        "curl",
+        "-L",
+        "-A",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "-H",
+        "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "-H",
+        "Accept-Language: en-US,en;q=0.9",
+        url,
+    ]
+    completed = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=60)
+    if completed.returncode != 0:
+        raise RuntimeError(f"curl failed for {url}: {completed.stderr.strip() or completed.stdout.strip()}")
+    return completed.stdout
+
+
+def pmc_search(domain: str, query: str) -> list[str]:
+    """Search PMC for open-access full-text articles only.
+
+    We intentionally exclude PubMed abstract landing pages and only keep PMC article URLs,
+    which are the open-access full-text library for this project.
+    """
+    search_url = "https://www.ncbi.nlm.nih.gov/pmc/?term=" + quote(query)
+    html_text = curl_fetch_text(search_url)
+
+    results: list[str] = []
+    seen: set[str] = set()
+    pattern = r'''href=["']([^"']+/articles/pmc\d+/?)['"]'''
+    for match in re.findall(pattern, html_text, flags=re.I):
+        if match.startswith("//"):
+            full_url = "https:" + match
+        elif match.startswith("http"):
+            full_url = match
+        else:
+            full_url = "https://www.ncbi.nlm.nih.gov" + match
+        if is_pmc_full_text_url(full_url) and full_url not in seen:
+            seen.add(full_url)
+            results.append(full_url)
+    return results[:10]
 
 
 def ddg_search(domain: str, query: str) -> list[str]:
@@ -224,6 +309,17 @@ def ddg_search(domain: str, query: str) -> list[str]:
     return results
 
 
+def extract_title_from_html(html_text: str, fallback: str) -> str:
+    match = re.search(r"<title>(.*?)</title>", html_text, flags=re.I | re.S)
+    if not match:
+        return fallback
+    title = html.unescape(match.group(1)).strip()
+    title = re.sub(r"\s*-\s*.*?\s*PubMed.*$", "", title, flags=re.I)
+    title = re.sub(r"\s*-\s*.*?\s*$", "", title)
+    title = re.sub(r"\s+", " ", title).strip()
+    return title or fallback
+
+
 def discover_articles(limit: int = 15) -> list[dict]:
     """Search approved organizations dynamically and return a diverse, deduplicated article set."""
     by_org: dict[str, list[dict]] = {org["name"]: [] for org in SEARCH_ORGANIZATIONS}
@@ -231,11 +327,17 @@ def discover_articles(limit: int = 15) -> list[dict]:
 
     for org in SEARCH_ORGANIZATIONS:
         for term in org["topics"]:
-            for result in ddg_search(org["domain"], term):
+            search_fn = pmc_search if org["domain"] in {"ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov", "www.ncbi.nlm.nih.gov"} else ddg_search
+            for result in search_fn(org["domain"], term):
                 if result in seen_urls or not is_allowed_domain(result):
                     continue
-                result_title = result.split("/")[-1].replace(".html", "").replace("-", " ").replace("_", " ")
-                title = result_title.title() if result_title.strip() else org["name"]
+                fallback_title = result.rstrip("/").split("/")[-1].replace(".html", "").replace("-", " ").replace("_", " ")
+                title = fallback_title.title() if fallback_title.strip() else org["name"]
+                if "ncbi.nlm.nih.gov" in result:
+                    try:
+                        title = extract_title_from_html(fetch_html(result), title)
+                    except Exception:
+                        pass
                 record = {
                     "title": title,
                     "url": result,
@@ -297,9 +399,14 @@ def fetch_html(url: str) -> Optional[str]:
         },
     )
     context = ssl._create_unverified_context()
-    with urlopen(request, context=context, timeout=25) as response:
-        charset = response.headers.get_content_charset() or "utf-8"
-        return response.read().decode(charset, errors="replace")
+    try:
+        with urlopen(request, context=context, timeout=25) as response:
+            charset = response.headers.get_content_charset() or "utf-8"
+            return response.read().decode(charset, errors="replace")
+    except Exception:
+        if "ncbi.nlm.nih.gov" in url or "pmc.ncbi.nlm.nih.gov" in url:
+            return curl_fetch_text(url)
+        raise
 
 
 def extract_readable_text(html_text: str) -> str:
