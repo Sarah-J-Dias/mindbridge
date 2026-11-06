@@ -4,28 +4,65 @@
 
 ```
 data/
-├── raw/             # one plain-text .txt file per source document
-├── sources.csv      # one row per document in raw/
+├── raw/                        # one plain-text .txt file per source document
+├── Generalinfo.csv             # general mental-health information sources
+├── conditions_and_signs.csv    # conditions, symptoms, and warning-sign sources
 └── resources.csv    # support resources the bot can point students to
 ```
+
+Both source catalogs use the same columns (`doc_id`, `title`, `url`,
+`organization`, `category`, `source`, `added_on`). Each `doc_id` points to a
+text file in `raw/`; retrieval reads metadata from both catalogs.
 
 ## Approved sources
 
 NIMH, SAMHSA, CDC, WHO, NAMI, MedlinePlus, and official campus counseling pages.
 Skip anything paywalled, unclear about reuse, or written as personal opinion (blogs, forums).
 
-## Adding a document — checklist
+## Populating and reconciling sources
+
+Run these commands from the repository root.
+
+Discover sources at runtime, fetch their text into `data/raw/`, and add metadata
+to `conditions_and_signs.csv` (the default):
+
+```powershell
+python data\autopopulate.py
+```
+
+To populate the general-information catalog instead, or to change the number
+of sources fetched:
+
+```powershell
+python data\autopopulate.py --catalog generalinfo --count 10
+```
+
+`--catalog` accepts `generalinfo` or `conditions_and_signs`; `--count` must be
+at least 1. Add `--overwrite` to refresh matching documents in the selected
+catalog. It does not clear the other catalog or unrelated raw files.
+
+After manually changing catalog entries or raw files, reconcile them with:
+
+```powershell
+python data\reconcile_raw_csv.py
+```
+
+Reconciliation removes `.txt` files not listed in either catalog and removes
+catalog rows whose matching `.txt` file is missing. It preserves non-text files
+in `raw/`.
+
+## Adding a document manually — checklist
 
 1. Copy the page's main text into a new file in `raw/`, named like `nimh_anxiety_overview.txt`.
 2. Delete menus, ads, footers, "related articles" links — keep only the article.
-3. Add a row to `sources.csv` with the same `doc_id` (the file name without `.txt`).
+3. Add a row to `Generalinfo.csv` or `conditions_and_signs.csv` with the same `doc_id` (the file name without `.txt`).
 4. Note the terms of use (most U.S. government pages are public domain; check others).
 
 ## Topic split
 
 | Member 1 | Member 2 |
 | --- | --- |
-| Anxiety, depression, stress, sleep, burnout | Coping skills, therapy types, substance use, student life |
+| Anxiety, depression, stress, sleep, burnout | Conditions, symptoms, warning signs, coping skills, support |
 
 ## resources.csv
 

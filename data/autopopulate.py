@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Populate data/raw and data/sources.csv from trusted mental-health sources.
+"""Populate the mental-health source catalogs using live search results.
 
 This script intentionally uses only known public sources approved by the project:
 NIMH, SAMHSA, WHO, NAMI, MedlinePlus, and official campus counseling pages.
-It fetches each URL, extracts readable text, saves the plaintext in data/raw,
-and records metadata in data/sources.csv for the vector database.
+It discovers article URLs at runtime, fetches each page, saves readable text in
+data/raw, and records metadata in either Generalinfo.csv or
+conditions_and_signs.csv. No article URLs are stored in the script.
 """
 
 from __future__ import annotations
@@ -14,26 +15,27 @@ import base64
 import csv
 import html
 import re
-import ssl
-import subprocess
 import sys
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable, List, Optional
-from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlparse
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
-SOURCES_CSV = DATA_DIR / "sources.csv"
-args_overwrite_for_build = False
+CATALOGS = {
+    "generalinfo": DATA_DIR / "Generalinfo.csv",
+    "conditions_and_signs": DATA_DIR / "conditions_and_signs.csv",
+}
 
 ALLOWED_DOMAINS = {
     "nimh.nih.gov",
     "www.nimh.nih.gov",
+    "cdc.gov",
+    "www.cdc.gov",
     "samhsa.gov",
     "www.samhsa.gov",
     "who.int",
@@ -42,9 +44,6 @@ ALLOWED_DOMAINS = {
     "www.nami.org",
     "medlineplus.gov",
     "www.medlineplus.gov",
-    "pmc.ncbi.nlm.nih.gov",
-    "www.ncbi.nlm.nih.gov",
-    "ncbi.nlm.nih.gov",
     "uhs.berkeley.edu",
     "www.uhs.berkeley.edu",
     "caps.umich.edu",
@@ -71,6 +70,17 @@ SEARCH_ORGANIZATIONS = [
             "suicide prevention",
             "eating disorders",
             "mental health disorders",
+        ],
+    },
+    {
+        "name": "Centers for Disease Control and Prevention",
+        "domain": "cdc.gov",
+        "topics": [
+            "mental health",
+            "anxiety",
+            "depression",
+            "suicide prevention",
+            "substance use",
         ],
     },
     {
@@ -123,21 +133,37 @@ SEARCH_ORGANIZATIONS = [
             "substance abuse",
         ],
     },
-    {
-        "name": "PubMed Central / NCBI",
-        "domain": "ncbi.nlm.nih.gov",
-        "topics": [
-            "depression",
-            "anxiety disorders",
-            "stress",
-            "post traumatic stress disorder",
-            "sleep disorders",
-            "suicide prevention",
-            "mental health",
-            "substance use",
-        ],
-    },
 ]
+
+CONDITION_SEARCH_TERMS = [
+    ("anxiety", "anxiety disorders signs symptoms"),
+    ("depression", "depression warning signs symptoms"),
+    ("ptsd", "PTSD symptoms post-traumatic stress disorder"),
+    ("eating-disorders", "eating disorders warning signs symptoms"),
+    ("bipolar-disorder", "bipolar disorder signs symptoms"),
+    ("schizophrenia", "schizophrenia early warning signs symptoms"),
+    ("ocd", "obsessive compulsive disorder signs symptoms"),
+    ("adhd", "ADHD signs symptoms adults children"),
+    ("substance-use", "substance use disorder warning signs symptoms"),
+    ("suicide-prevention", "suicide warning signs"),
+]
+
+CONDITION_TITLE_PATTERNS = {
+    "anxiety": r"\banxiety\b",
+    "depression": r"\bdepress(?:ion|ive)\b",
+    "ptsd": r"\bptsd\b|post[\s-]traumatic stress disorder",
+    "eating-disorders": r"eating disorder|anorexia|bulimia",
+    "bipolar-disorder": r"\bbipolar\b",
+    "schizophrenia": r"\bschizophrenia\b|\bpsychosis\b",
+    "ocd": r"\bocd\b|obsessive.compulsive disorder",
+    "adhd": r"\badhd\b|attention.deficit hyperactivity disorder",
+    "substance-use": r"substance use|alcohol use disorder|drug use disorder",
+    "suicide-prevention": r"suicid",
+}
+WARNING_SIGN_PATTERN = re.compile(
+    r"\b(signs?|symptoms?|warning|recogniz\w*|early signs|criteria)\b",
+    flags=re.IGNORECASE,
+)
 
 
 class TextExtractor(HTMLParser):
@@ -185,79 +211,13 @@ def slugify(value: str) -> str:
 def is_allowed_domain(url: str) -> bool:
     try:
         netloc = urlparse(url).netloc.lower()
-        path = urlparse(url).path.lower()
     except Exception:
         return False
     if not netloc:
         return False
 
-    if "pubmed.ncbi.nlm.nih.gov" in netloc:
-        return False
-
     domain = netloc.replace("www.", "")
-    if domain in ALLOWED_DOMAINS or any(netloc.endswith(f".{allowed}") for allowed in ALLOWED_DOMAINS):
-        if "ncbi.nlm.nih.gov" in netloc and "/pmc/" not in path and "/articles/pmc" not in path and "/articles/PMC" not in path:
-            return False
-        return True
-    return False
-
-
-def is_pmc_full_text_url(url: str) -> bool:
-    try:
-        parsed = urlparse(url)
-        netloc = parsed.netloc.lower()
-        path = parsed.path.lower()
-    except Exception:
-        return False
-
-    if "pubmed.ncbi.nlm.nih.gov" in netloc:
-        return False
-    if "ncbi.nlm.nih.gov" not in netloc and "pmc.ncbi.nlm.nih.gov" not in netloc:
-        return False
-    return bool(re.search(r"/(?:pmc/)?articles/pmc\d+/?$", path))
-
-
-def curl_fetch_text(url: str) -> str:
-    cmd = [
-        "curl",
-        "-L",
-        "-A",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        "-H",
-        "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "-H",
-        "Accept-Language: en-US,en;q=0.9",
-        url,
-    ]
-    completed = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=60)
-    if completed.returncode != 0:
-        raise RuntimeError(f"curl failed for {url}: {completed.stderr.strip() or completed.stdout.strip()}")
-    return completed.stdout
-
-
-def pmc_search(domain: str, query: str) -> list[str]:
-    """Search PMC for open-access full-text articles only.
-
-    We intentionally exclude PubMed abstract landing pages and only keep PMC article URLs,
-    which are the open-access full-text library for this project.
-    """
-    search_url = "https://www.ncbi.nlm.nih.gov/pmc/?term=" + quote(query)
-    html_text = curl_fetch_text(search_url)
-
-    results: list[str] = []
-    seen: set[str] = set()
-    pattern = r'''href=["']([^"']+/articles/pmc\d+/?)['"]'''
-    for match in re.findall(pattern, html_text, flags=re.I):
-        if match.startswith("//"):
-            full_url = "https:" + match
-        elif match.startswith("http"):
-            full_url = match
-        else:
-            full_url = "https://www.ncbi.nlm.nih.gov" + match
-        if is_pmc_full_text_url(full_url) and full_url not in seen:
-            seen.add(full_url)
-            results.append(full_url)
-    return results[:10]
+    return domain in ALLOWED_DOMAINS or any(netloc.endswith(f".{allowed}") for allowed in ALLOWED_DOMAINS)
 
 
 def ddg_search(domain: str, query: str) -> list[str]:
@@ -276,8 +236,7 @@ def ddg_search(domain: str, query: str) -> list[str]:
             "Accept-Language": "en-US,en;q=0.9",
         },
     )
-    context = ssl._create_unverified_context()
-    with urlopen(request, context=context, timeout=30) as response:
+    with urlopen(request, timeout=30) as response:
         page = response.read().decode(response.headers.get_content_charset() or "utf-8", errors="replace")
 
     results: list[str] = []
@@ -309,79 +268,92 @@ def ddg_search(domain: str, query: str) -> list[str]:
     return results
 
 
-def extract_title_from_html(html_text: str, fallback: str) -> str:
-    match = re.search(r"<title>(.*?)</title>", html_text, flags=re.I | re.S)
+def extract_page_title(html_text: str, fallback: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", html_text, flags=re.IGNORECASE | re.DOTALL)
     if not match:
         return fallback
-    title = html.unescape(match.group(1)).strip()
-    title = re.sub(r"\s*-\s*.*?\s*PubMed.*$", "", title, flags=re.I)
-    title = re.sub(r"\s*-\s*.*?\s*$", "", title)
-    title = re.sub(r"\s+", " ", title).strip()
-    return title or fallback
+    title = html.unescape(re.sub(r"<[^>]+>", "", match.group(1)))
+    title = re.sub(r"\s*[|–—]\s*.*$", "", title)
+    title = re.sub(
+        r"\s+-\s+(?:National Institute|Centers for Disease Control|World Health|"
+        r"Substance Abuse|National Alliance|MedlinePlus).*$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\s+", " ", title).strip() or fallback
 
 
-def discover_articles(limit: int = 15) -> list[dict]:
-    """Search approved organizations dynamically and return a diverse, deduplicated article set."""
-    by_org: dict[str, list[dict]] = {org["name"]: [] for org in SEARCH_ORGANIZATIONS}
+def discover_articles(limit: int = 15, catalog: str = "conditions_and_signs") -> list[dict]:
+    """Search approved organizations dynamically and return relevant article URLs."""
+    if catalog not in CATALOGS:
+        raise ValueError(f"Unknown source catalog: {catalog}")
+
     seen_urls: set[str] = set()
+    selected: list[dict] = []
+    if catalog == "conditions_and_signs":
+        topics = CONDITION_SEARCH_TERMS
+        per_topic_limit = max(1, (limit + len(topics) - 1) // len(topics))
+        found_by_topic = {category: 0 for category, _ in topics}
+        for round_index in range(per_topic_limit):
+            for category, term in topics:
+                if found_by_topic[category] >= per_topic_limit:
+                    continue
+                for org in SEARCH_ORGANIZATIONS:
+                    try:
+                        results = ddg_search(org["domain"], term)
+                    except Exception as exc:
+                        print(f"[search skip] {org['name']} ({category}) -> {exc}", file=sys.stderr)
+                        continue
+                    for result in results:
+                        if (
+                            result in seen_urls
+                            or not is_allowed_domain(result)
+                            or urlparse(result).path.lower().endswith((".pdf", ".doc", ".docx"))
+                        ):
+                            continue
+                        fallback_title = result.rstrip("/").split("/")[-1].replace(".html", "").replace("-", " ").replace("_", " ")
+                        title = fallback_title.title() if fallback_title.strip() else org["name"]
+                        selected.append({
+                            "title": title,
+                            "url": result,
+                            "organization": org["name"],
+                            "category": category,
+                        })
+                        seen_urls.add(result)
+                        found_by_topic[category] += 1
+                        break
+                    if found_by_topic[category] >= round_index + 1:
+                        break
+                if len(selected) >= limit:
+                    return selected[:limit]
+        return selected[:limit]
 
     for org in SEARCH_ORGANIZATIONS:
         for term in org["topics"]:
-            search_fn = pmc_search if org["domain"] in {"ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov", "www.ncbi.nlm.nih.gov"} else ddg_search
-            for result in search_fn(org["domain"], term):
-                if result in seen_urls or not is_allowed_domain(result):
+            try:
+                results = ddg_search(org["domain"], term)
+            except Exception as exc:
+                print(f"[search skip] {org['name']} ({term}) -> {exc}", file=sys.stderr)
+                continue
+            for result in results:
+                if (
+                    result in seen_urls
+                    or not is_allowed_domain(result)
+                    or urlparse(result).path.lower().endswith((".pdf", ".doc", ".docx"))
+                ):
                     continue
                 fallback_title = result.rstrip("/").split("/")[-1].replace(".html", "").replace("-", " ").replace("_", " ")
                 title = fallback_title.title() if fallback_title.strip() else org["name"]
-                if "ncbi.nlm.nih.gov" in result:
-                    try:
-                        title = extract_title_from_html(fetch_html(result), title)
-                    except Exception:
-                        pass
-                record = {
+                selected.append({
                     "title": title,
                     "url": result,
                     "organization": org["name"],
                     "category": term.lower().replace(" ", "-"),
-                }
-                by_org[org["name"]].append(record)
+                })
                 seen_urls.add(result)
-
-    if not any(by_org.values()):
-        raise RuntimeError("No approved-domain articles were discovered from search results.")
-
-    selected: list[dict] = []
-    selected_urls: set[str] = set()
-    org_names = list(by_org.keys())
-    index = 0
-
-    while len(selected) < limit and sum(len(items) for items in by_org.values()) > 0:
-        org_name = org_names[index % len(org_names)]
-        items = by_org[org_name]
-        if not items:
-            index += 1
-            continue
-
-        item = items.pop(0)
-        if item["url"] in selected_urls:
-            index += 1
-            continue
-
-        selected.append(item)
-        selected_urls.add(item["url"])
-        index += 1
-
-    if len(selected) < limit:
-        for org_name, items in by_org.items():
-            for item in items:
-                if item["url"] in selected_urls:
-                    continue
-                selected.append(item)
-                selected_urls.add(item["url"])
                 if len(selected) >= limit:
-                    break
-            if len(selected) >= limit:
-                break
+                    return selected[:limit]
 
     return selected[:limit]
 
@@ -398,15 +370,11 @@ def fetch_html(url: str) -> Optional[str]:
             "Accept-Language": "en-US,en;q=0.9",
         },
     )
-    context = ssl._create_unverified_context()
-    try:
-        with urlopen(request, context=context, timeout=25) as response:
-            charset = response.headers.get_content_charset() or "utf-8"
-            return response.read().decode(charset, errors="replace")
-    except Exception:
-        if "ncbi.nlm.nih.gov" in url or "pmc.ncbi.nlm.nih.gov" in url:
-            return curl_fetch_text(url)
-        raise
+    with urlopen(request, timeout=25) as response:
+        if not is_allowed_domain(response.geturl()):
+            raise ValueError(f"Redirected outside approved source domains: {response.geturl()}")
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.read().decode(charset, errors="replace")
 
 
 def extract_readable_text(html_text: str) -> str:
@@ -420,11 +388,21 @@ def extract_readable_text(html_text: str) -> str:
     return text
 
 
-def load_existing_rows() -> dict:
+def is_condition_warning_source(record: dict, text: str) -> bool:
+    category = record.get("category", "")
+    title_pattern = CONDITION_TITLE_PATTERNS.get(category)
+    if not title_pattern:
+        return True
+    title_matches = re.search(title_pattern, record.get("title", ""), flags=re.IGNORECASE)
+    discusses_signs = WARNING_SIGN_PATTERN.search(text) or WARNING_SIGN_PATTERN.search(record.get("title", ""))
+    return bool(title_matches and discusses_signs)
+
+
+def load_existing_rows(csv_path: Path) -> dict:
     rows: dict = {}
-    if not SOURCES_CSV.exists():
+    if not csv_path.exists():
         return rows
-    with SOURCES_CSV.open("r", newline="", encoding="utf-8") as f:
+    with csv_path.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             doc_id = (row.get("doc_id") or "").strip()
@@ -433,33 +411,17 @@ def load_existing_rows() -> dict:
     return rows
 
 
-def reset_library(overwrite: bool):
-    if not overwrite:
-        return
-    for path in RAW_DIR.glob("*.txt"):
-        path.unlink()
-    if SOURCES_CSV.exists():
-        SOURCES_CSV.unlink()
-
-
-def write_sources_csv(rows: Iterable[dict]):
+def write_catalog_csv(csv_path: Path, rows: Iterable[dict]):
     fieldnames = ["doc_id", "title", "url", "organization", "category", "source", "added_on"]
     rows = list(rows)
     RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-    merged = {}
-    if SOURCES_CSV.exists():
-        with SOURCES_CSV.open("r", newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                key = (row.get("doc_id") or "").strip()
-                if key:
-                    merged[key] = row
+    merged = load_existing_rows(csv_path)
 
     for row in rows:
         merged[row["doc_id"]] = row
 
-    with SOURCES_CSV.open("w", newline="", encoding="utf-8") as f:
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for row in merged.values():
@@ -472,7 +434,7 @@ def doc_id_for_record(record: dict) -> str:
     return slugify(f"{path_slug} {title} {record['organization']}")
 
 
-def build_document(record: dict) -> tuple[str, str, dict]:
+def build_document(record: dict, overwrite: bool = False) -> tuple[str, str, dict]:
     title = record["title"].strip()
     doc_id = doc_id_for_record(record)
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -481,14 +443,20 @@ def build_document(record: dict) -> tuple[str, str, dict]:
     if html_text is None:
         raise RuntimeError(f"No HTML returned for {record['url']}")
 
+    title = extract_page_title(html_text, title)
     text = extract_readable_text(html_text)
     if not text or len(text) < 200:
         raise RuntimeError(f"Fetched page looks empty or blocked: {record['url']}")
+    validation_record = {**record, "title": title}
+    if record.get("category") in CONDITION_TITLE_PATTERNS:
+        if not is_condition_warning_source(validation_record, text):
+            if not re.search(CONDITION_TITLE_PATTERNS[record["category"]], title, flags=re.IGNORECASE):
+                raise RuntimeError(f"Page title does not match condition {record['category']}: {title}")
+            raise RuntimeError(f"Page does not discuss symptoms or warning signs: {record['url']}")
 
     target = RAW_DIR / f"{doc_id}.txt"
-    if target.exists() and not args_overwrite_for_build:
-        raise RuntimeError(f"File already exists: {target.name}")
-    target.write_text(text, encoding="utf-8")
+    if overwrite or not target.exists():
+        target.write_text(text, encoding="utf-8")
 
     row = {
         "doc_id": doc_id,
@@ -502,27 +470,23 @@ def build_document(record: dict) -> tuple[str, str, dict]:
     return doc_id, target.name, row
 
 
-def populate(count: int = 15, overwrite: bool = False) -> list[str]:
-    global args_overwrite_for_build
-    args_overwrite_for_build = overwrite
-
+def populate(
+    count: int = 15,
+    overwrite: bool = False,
+    catalog: str = "conditions_and_signs",
+) -> list[str]:
+    if catalog not in CATALOGS:
+        raise ValueError(f"Unknown source catalog: {catalog}")
+    csv_path = CATALOGS[catalog]
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    if overwrite:
-        reset_library(overwrite=True)
 
     rows: List[dict] = []
     saved: List[str] = []
     seen = set()
-    existing_ids = {p.stem for p in RAW_DIR.glob("*.txt")}
-    if SOURCES_CSV.exists():
-        with SOURCES_CSV.open("r", newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                doc_id = (row.get("doc_id") or "").strip()
-                if doc_id:
-                    existing_ids.add(doc_id)
+    existing_rows = load_existing_rows(csv_path)
+    existing_ids = set(existing_rows)
 
-    candidate_pool = discover_articles(limit=max(count * 5, 50))
+    candidate_pool = discover_articles(limit=max(count * 3, 30), catalog=catalog)
     for record in candidate_pool:
         doc_id = doc_id_for_record(record)
 
@@ -530,7 +494,7 @@ def populate(count: int = 15, overwrite: bool = False) -> list[str]:
             continue
 
         try:
-            doc_id, filename, row = build_document(record)
+            doc_id, filename, row = build_document(record, overwrite=overwrite)
         except Exception as exc:
             print(f"[skip] {record['title']} -> {exc}", file=sys.stderr)
             continue
@@ -546,9 +510,9 @@ def populate(count: int = 15, overwrite: bool = False) -> list[str]:
             break
 
     if rows:
-        write_sources_csv(rows)
+        write_catalog_csv(csv_path, rows)
     else:
-        print("No valid articles were saved.", file=sys.stderr)
+        print(f"No new sources were added to {csv_path.name}.")
 
     return saved
 
@@ -556,15 +520,25 @@ def populate(count: int = 15, overwrite: bool = False) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch and save trusted mental-health articles into the project data library.")
     parser.add_argument("--count", type=int, default=15, help="How many approved articles to fetch (default: 15)")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite any existing raw files and CSV rows for the selected documents")
+    parser.add_argument(
+        "--catalog",
+        choices=sorted(CATALOGS),
+        default="conditions_and_signs",
+        help="Which CSV catalog to update (default: conditions_and_signs)",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Refresh discovered documents already in the selected catalog without deleting other files",
+    )
     args = parser.parse_args()
 
     if args.count < 1:
         raise SystemExit("--count must be at least 1")
 
-    saved = populate(count=args.count, overwrite=args.overwrite)
+    saved = populate(count=args.count, overwrite=args.overwrite, catalog=args.catalog)
     print(f"Saved {len(saved)} documents to {RAW_DIR}.")
-    print(f"Updated {SOURCES_CSV}.")
+    print(f"Updated {CATALOGS[args.catalog]}.")
     return 0
 
 

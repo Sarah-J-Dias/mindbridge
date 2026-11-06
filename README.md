@@ -32,7 +32,7 @@ Student message
 
 | Folder | Owner | What lives here |
 | --- | --- | --- |
-| `data/` | Members 1 + 2 | Source documents, `sources.csv`, `resources.csv` |
+| `data/` | Members 1 + 2 | Source documents, `Generalinfo.csv`, `conditions_and_signs.csv`, `resources.csv` |
 | `retrieval/` | Member 3 | Script that chunks docs and builds the Chroma database |
 | `agents/` | Sarah | Safety, router, answer and self-check agents |
 | `safety/` | Member 4 | Crisis keywords, crisis message, disclaimer, "never do" rules |

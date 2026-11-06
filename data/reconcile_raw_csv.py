@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Remove orphaned raw files and orphaned CSV rows.
-
-This script ensures the raw text library and the CSV metadata stay in sync:
-- deletes any file in data/raw that is not represented by a row in data/sources.csv
-- deletes any CSV row whose doc_id does not have a matching .txt file in data/raw
-
-It is intentionally conservative: only files in data/raw and rows in the CSV are touched.
-"""
+"""Reconcile raw documents against the Generalinfo and conditions catalogs."""
 
 from __future__ import annotations
 
@@ -16,65 +9,71 @@ import sys
 
 ROOT = Path(__file__).resolve().parent
 RAW_DIR = ROOT / "raw"
-CSV_PATH = ROOT / "sources.csv"
+CSV_PATHS = (ROOT / "Generalinfo.csv", ROOT / "conditions_and_signs.csv")
+DEFAULT_FIELDS = ["doc_id", "title", "url", "organization", "category", "source", "added_on"]
 
 
-def read_csv_doc_ids(csv_path: Path) -> tuple[set[str], list[dict]]:
+def read_csv_rows(csv_path: Path) -> tuple[list[str], list[dict[str, str]]]:
     if not csv_path.exists():
-        return set(), []
+        return DEFAULT_FIELDS, []
 
-    rows: list[dict] = []
-    doc_ids: set[str] = set()
-    with csv_path.open("r", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            doc_id = (row.get("doc_id") or "").strip()
-            if not doc_id:
-                continue
-            rows.append(row)
-            doc_ids.add(doc_id)
-    return doc_ids, rows
+    with csv_path.open("r", newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        fieldnames = reader.fieldnames or DEFAULT_FIELDS
+        rows = [
+            row for row in reader
+            if (row.get("doc_id") or "").strip()
+        ]
+    return fieldnames, rows
 
 
 def reconcile() -> tuple[int, int]:
     if not RAW_DIR.exists():
         raise FileNotFoundError(f"Missing raw directory: {RAW_DIR}")
+    missing_catalogs = [path for path in CSV_PATHS if not path.exists()]
+    if missing_catalogs:
+        raise FileNotFoundError(f"Missing source catalogs: {', '.join(map(str, missing_catalogs))}")
 
-    csv_doc_ids, csv_rows = read_csv_doc_ids(CSV_PATH)
-    raw_files = [p for p in RAW_DIR.iterdir() if p.is_file()]
+    catalog_rows = {path: read_csv_rows(path) for path in CSV_PATHS}
+    tracked_ids = {
+        (row.get("doc_id") or "").strip()
+        for _, rows in catalog_rows.values()
+        for row in rows
+    }
 
-    raw_stems = {p.stem for p in raw_files if p.suffix.lower() == ".txt"}
+    raw_files = [path for path in RAW_DIR.iterdir() if path.is_file()]
+    raw_stems = {path.stem for path in raw_files if path.suffix.lower() == ".txt"}
+    if not tracked_ids and raw_stems:
+        raise ValueError("Both source catalogs are empty; refusing to remove all raw documents.")
 
-    removed_raw = []
-    for path in raw_files:
-        if path.name == ".gitkeep":
-            removed_raw.append(path)
-            continue
-        if path.suffix.lower() == ".txt" and path.stem in csv_doc_ids:
-            continue
-        if path.suffix.lower() != ".txt" or path.stem not in csv_doc_ids:
-            removed_raw.append(path)
-
-    for path in removed_raw:
+    orphaned_raw = [
+        path for path in raw_files
+        if path.suffix.lower() == ".txt" and path.stem not in tracked_ids
+    ]
+    for path in orphaned_raw:
         path.unlink()
 
-    kept_rows = [row for row in csv_rows if (row.get("doc_id") or "").strip() in raw_stems]
-    removed_csv = len(csv_rows) - len(kept_rows)
+    removed_csv = 0
+    for csv_path, (fieldnames, rows) in catalog_rows.items():
+        kept_rows = [
+            row for row in rows
+            if (row.get("doc_id") or "").strip() in raw_stems
+        ]
+        removed_csv += len(rows) - len(kept_rows)
+        if len(kept_rows) != len(rows):
+            with csv_path.open("w", newline="", encoding="utf-8") as file:
+                writer = csv.DictWriter(file, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(kept_rows)
 
-    if CSV_PATH.exists() and removed_csv > 0:
-        with CSV_PATH.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=list(csv_rows[0].keys()) if csv_rows else ["doc_id", "title", "url", "organization", "category", "source", "added_on"])
-            writer.writeheader()
-            writer.writerows(kept_rows)
-
-    return len(removed_raw), removed_csv
+    return len(orphaned_raw), removed_csv
 
 
 if __name__ == "__main__":
     try:
         removed_raw, removed_csv = reconcile()
-        print(f"Deleted {removed_raw} orphaned file(s) from {RAW_DIR}")
-        print(f"Removed {removed_csv} orphaned row(s) from {CSV_PATH}")
+        print(f"Deleted {removed_raw} orphaned .txt file(s) from {RAW_DIR}")
+        print(f"Removed {removed_csv} orphaned row(s) from the source catalogs")
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1)

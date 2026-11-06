@@ -11,7 +11,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = ROOT / "data" / "raw"
-SOURCES_CSV = ROOT / "data" / "sources.csv"
+SOURCE_CSVS = (
+    ROOT / "data" / "Generalinfo.csv",
+    ROOT / "data" / "conditions_and_signs.csv",
+)
 DB_DIR = ROOT / "chroma_db"
 COLLECTION = "mindbridge"
 EMBED_MODEL = "all-MiniLM-L6-v2"  # small, free, runs on a laptop
@@ -34,11 +37,18 @@ def chunk_text(text, chunk_size=800, overlap=100):
 
 
 def load_source_metadata():
-    """Map doc_id -> row from data/sources.csv (title, url, organization...)."""
-    if not SOURCES_CSV.exists():
-        return {}
-    with open(SOURCES_CSV, newline="", encoding="utf-8") as f:
-        return {row["doc_id"]: row for row in csv.DictReader(f) if row.get("doc_id")}
+    """Map doc_id -> row from both data source catalogs."""
+    metadata = {}
+    for csv_path in SOURCE_CSVS:
+        if not csv_path.exists():
+            continue
+        with csv_path.open(newline="", encoding="utf-8") as file:
+            metadata.update(
+                (row["doc_id"], row)
+                for row in csv.DictReader(file)
+                if row.get("doc_id")
+            )
+    return metadata
 
 
 def get_collection():
@@ -65,7 +75,7 @@ def build(chunk_size):
         doc_id = path.stem
         info = meta.get(doc_id, {})
         if not info:
-            print(f"  ! {doc_id} has no row in sources.csv — add one so answers can cite it")
+            print(f"  ! {doc_id} has no row in Generalinfo.csv or conditions_and_signs.csv")
         chunks = chunk_text(path.read_text(encoding="utf-8"), chunk_size=chunk_size)
         collection.add(
             ids=[f"{doc_id}__{i}" for i in range(len(chunks))],
