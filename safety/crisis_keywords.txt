@@ -1,12 +1,63 @@
 # One phrase per line, lowercase. Lines starting with # are ignored.
 # Starter list — Member 4 expands this to 40+ phrases, including indirect ones.
+# Direct
 suicide
 suicidal
 kill myself
+killing myself
 end my life
+ending my life
+take my own life
 want to die
+wanna die
+wish i were dead
+wish i was dead
 self-harm
+self harm
 hurt myself
+hurting myself
+cut myself
+cutting myself
+overdose on purpose
+
+# Hopelessness / no future
 no reason to live
+nothing to live for
+can't go on
+cant go on
+can't do this anymore
+cant do this anymore
+no point in living
+no point anymore
+life isn't worth living
+life is not worth living
+i give up on life
+don't see a way out
+no way out
+can't take it anymore
+cant take it anymore
+
+# Indirect / burden
 better off without me
+better off if i was gone
+better off if i were gone
+everyone would be better off
 don't want to be here anymore
+dont want to be here anymore
+don't want to exist
+don't want to wake up
+wish i could disappear
+wish i wouldn't wake up
+i'm a burden
+im a burden
+tired of being alive
+tired of living
+
+# Plans / means / goodbyes
+goodbye forever
+saying goodbye to everyone
+write a note
+suicide note
+how to die
+painless way to die
+have a plan to
