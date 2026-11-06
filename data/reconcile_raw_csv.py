@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reconcile raw documents against the Generalinfo and conditions catalogs."""
+"""Reconcile raw documents against CSV catalogs in the data directory."""
 
 from __future__ import annotations
 
@@ -9,17 +9,15 @@ import sys
 
 ROOT = Path(__file__).resolve().parent
 RAW_DIR = ROOT / "raw"
-CSV_PATHS = (ROOT / "Generalinfo.csv", ROOT / "conditions_and_signs.csv")
-DEFAULT_FIELDS = ["doc_id", "title", "url", "organization", "category", "source", "added_on"]
 
 
 def read_csv_rows(csv_path: Path) -> tuple[list[str], list[dict[str, str]]]:
-    if not csv_path.exists():
-        return DEFAULT_FIELDS, []
-
     with csv_path.open("r", newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file)
-        fieldnames = reader.fieldnames or DEFAULT_FIELDS
+        fieldnames = reader.fieldnames or []
+        if "doc_id" not in fieldnames:
+            return fieldnames, []
+
         rows = [
             row for row in reader
             if (row.get("doc_id") or "").strip()
@@ -30,11 +28,15 @@ def read_csv_rows(csv_path: Path) -> tuple[list[str], list[dict[str, str]]]:
 def reconcile() -> tuple[int, int]:
     if not RAW_DIR.exists():
         raise FileNotFoundError(f"Missing raw directory: {RAW_DIR}")
-    missing_catalogs = [path for path in CSV_PATHS if not path.exists()]
-    if missing_catalogs:
-        raise FileNotFoundError(f"Missing source catalogs: {', '.join(map(str, missing_catalogs))}")
 
-    catalog_rows = {path: read_csv_rows(path) for path in CSV_PATHS}
+    catalog_rows: dict[Path, tuple[list[str], list[dict[str, str]]]] = {}
+    for csv_path in sorted(ROOT.iterdir()):
+        if not csv_path.is_file() or csv_path.suffix.lower() != ".csv":
+            continue
+        fieldnames, rows = read_csv_rows(csv_path)
+        if "doc_id" in fieldnames:
+            catalog_rows[csv_path] = fieldnames, rows
+
     tracked_ids = {
         (row.get("doc_id") or "").strip()
         for _, rows in catalog_rows.values()

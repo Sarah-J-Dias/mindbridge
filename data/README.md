@@ -10,9 +10,10 @@ data/
 └── resources.csv    # support resources the bot can point students to
 ```
 
-Both source catalogs use the same columns (`doc_id`, `title`, `url`,
+The source catalogs use the same columns (`doc_id`, `title`, `url`,
 `organization`, `category`, `source`, `added_on`). Each `doc_id` points to a
-text file in `raw/`; retrieval reads metadata from both catalogs.
+text file in `raw/`; retrieval reads metadata from the general-information and
+conditions catalogs.
 
 ## Approved sources
 
@@ -47,9 +48,10 @@ After manually changing catalog entries or raw files, reconcile them with:
 python data\reconcile_raw_csv.py
 ```
 
-Reconciliation removes `.txt` files not listed in either catalog and removes
-catalog rows whose matching `.txt` file is missing. It preserves non-text files
-in `raw/`.
+Reconciliation discovers every CSV in `data/` with a `doc_id` column, removes
+`.txt` files not listed in those catalogs, and removes catalog rows whose
+matching `.txt` file is missing. CSVs without a `doc_id` column and non-text
+files in `raw/` are left untouched.
 
 ## Adding a document manually — checklist
 
