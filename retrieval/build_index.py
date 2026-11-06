@@ -7,6 +7,7 @@ Usage:
 """
 import argparse
 import csv
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,17 +21,67 @@ COLLECTION = "mindbridge"
 EMBED_MODEL = "all-MiniLM-L6-v2"  # small, free, runs on a laptop
 
 
+# Website clutter that autopopulate.py copies in with the article text.
+# Removed before chunking so it never gets embedded or shown to a student.
+BOILERPLATE_PATTERNS = [
+    r"Skip (?:directly )?to (?:main |site )?content",
+    r"Skip directly to search",
+    r"Skip navigation",
+    r"Skip to content",
+    r"An official website of the United States government",
+    r"Here's how you know",
+    r"Official websites use \.gov A \.gov website belongs to an official government organization in the United States\.",
+    r"Secure \.gov websites use HTTPS A lock \( \) or https:// means you.ve safely connected to the \.gov website\.",
+    r"Share sensitive information only on official, secure websites\.",
+    r"NIH Websites Are Changing Get the Latest Updates and FAQs on the transition",
+    r"Per Executive Order \d+ ?, federal agencies are now using .{0,120}?during this transition\.",
+    r"Health Topics Statistics Brochures and Fact Sheets Help for Mental Illnesses Clinical Trials Share Page Menu",
+    r"Download PDF",
+    r"En español",
+    r"Reading time:",
+]
+_BOILERPLATE_RE = re.compile("|".join(BOILERPLATE_PATTERNS))
+
+
+def clean_text(text):
+    """Strip known site boilerplate and collapse whitespace."""
+    text = _BOILERPLATE_RE.sub(" ", text)
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
+def _split_sentences(text):
+    """Split on paragraph breaks and sentence ends. The raw files are one long
+    line each, so splitting on paragraphs alone would make one giant chunk per
+    document, and the embedding model only reads the first ~256 tokens."""
+    pieces = []
+    for para in re.split(r"\n\s*\n", text):
+        pieces.extend(s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"“(])", para) if s.strip())
+    return pieces
+
+
 def chunk_text(text, chunk_size=800, overlap=100):
     """Split text into overlapping chunks of roughly `chunk_size` characters,
-    breaking on paragraph boundaries where possible."""
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    breaking on sentence boundaries. A single sentence longer than
+    `chunk_size` (e.g. a run-on list of links) is cut at word boundaries."""
+    sentences = []
+    for s in _split_sentences(text):
+        while len(s) > chunk_size:
+            cut = s.rfind(" ", 0, chunk_size)
+            cut = cut if cut > 0 else chunk_size
+            sentences.append(s[:cut])
+            s = s[cut:].strip()
+        if s:
+            sentences.append(s)
+
     chunks, current = [], ""
-    for para in paragraphs:
-        if current and len(current) + len(para) > chunk_size:
+    for sent in sentences:
+        if current and len(current) + 1 + len(sent) > chunk_size:
             chunks.append(current)
-            current = current[-overlap:] + "\n\n" + para  # carry a little context over
+            tail = current[-overlap:]
+            tail = tail[tail.find(" ") + 1:] if " " in tail else tail  # start the overlap on a whole word
+            current = f"{tail} {sent}"
         else:
-            current = f"{current}\n\n{para}" if current else para
+            current = f"{current} {sent}" if current else sent
     if current:
         chunks.append(current)
     return chunks
@@ -76,7 +127,10 @@ def build(chunk_size):
         info = meta.get(doc_id, {})
         if not info:
             print(f"  ! {doc_id} has no row in Generalinfo.csv or conditions_and_signs.csv")
-        chunks = chunk_text(path.read_text(encoding="utf-8"), chunk_size=chunk_size)
+        chunks = chunk_text(clean_text(path.read_text(encoding="utf-8")), chunk_size=chunk_size)
+        if not chunks:
+            print(f"  ! {doc_id} is empty after cleaning, skipped")
+            continue
         collection.add(
             ids=[f"{doc_id}__{i}" for i in range(len(chunks))],
             documents=chunks,

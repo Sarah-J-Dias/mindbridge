@@ -34,7 +34,16 @@ def route(message):
 def resource_tool(message):
     with open(RESOURCES_CSV, newline="", encoding="utf-8") as f:
         rows = [r for r in csv.DictReader(f) if "TODO" not in r.get("phone", "")]
-    lines = [f"- **{r['name']}** ({r['type']}): {r['phone'] or r['url']} — {r['hours']}" for r in rows]
+    def contact(r):
+        parts = []
+        if r.get("phone"):
+            parts.append(f"call {r['phone']}")
+        if r.get("text"):
+            parts.append(f"text {r['text']}")
+        return ", ".join(parts) or r.get("url", "")
+
+    lines = [f"- **{r['name']}** ({r['type']}): {contact(r)}" + (f" — {r['hours']}" if r.get("hours") else "")
+             for r in rows]
     return {"answer": "Here are some places you can reach out to:\n\n" + "\n".join(lines),
             "sources": [{"title": r["name"], "url": r["url"]} for r in rows if r["url"]]}
 

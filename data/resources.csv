@@ -1,15 +1,12 @@
 name,type,phone,text,url,hours,who_it_serves,scope,last_verified
 988 Suicide & Crisis Lifeline,crisis line,988,988,https://988lifeline.org,24/7,Anyone in emotional distress or suicidal crisis,national,
 Emergency services,emergency,911,,,24/7,Anyone in immediate danger,national,
-UCLA CAPS (Counseling and Psychological Services),campus counseling,TODO-verify,,TODO-verify,TODO-verify,UCLA students,campus,
-988 Suicide & Crisis Lifeline,crisis line,988,988,https://988lifeline.org,24/7,Anyone in emotional distress or suicidal crisis,national,
-Emergency services,emergency,911,,,24/7,Anyone in immediate danger,national,
-UCLA Counseling and Psychological Services (CAPS),campus counseling,310-825-0768,,https://counseling.ucla.edu,24/7 crisis support / Mon-Fri 8am-5pm clinic,UCLA students,campus,
-CARE at UCLA (Confidential Advocate Office),survivor support,310-206-9133,,https://www.uclahealth.org/programs/care,Mon-Fri 8am-5pm (24/7 advocate line available),UCLA students faculty and staff affected by sexual/gender-based violence,campus,
-RISE (Resilience in Student Experience) Center,peer wellness,310-825-0768,,https://counseling.ucla.edu/rise,Mon-Fri 9am-6pm,UCLA students,campus,
 Crisis Text Line,crisis text line,,HOME to 741741,https://www.crisistextline.org,24/7,Anyone in crisis,national,
-UCLA Depression Grand Challenge - Student Ambassadors,peer support / mental health,310-825-0768,,https://depression.ucla.edu/,Variable,UCLA students interested in mental health advocacy and research,campus,
-UCLA Active Minds,mental health advocacy student group,,[contact via website],https://instagram.com/activemindsucla,Variable,UCLA students dedicated to mental health awareness and breaking stigma,campus,
-Bruin Consent Coalition,peer advocacy / support,,[contact via website],https://bruinconsentcoalition.org/,Variable,UCLA students focused on sexual violence prevention and survivor advocacy,campus,
-Epsilon Eta (Environmental Honorary - mental health / wellness walks),student wellness group,,[contact via website],https://www.instagram.com/uclaepsiloneta/,Variable,UCLA students promoting environmental and holistic well-being,campus,
+UCLA Counseling and Psychological Services (CAPS),campus counseling,310-825-0768,,https://counseling.ucla.edu,24/7 crisis counseling by phone; see website for clinic hours,UCLA students,campus,2026-11-06
+CARE Program (Campus Assault Resources & Education),survivor support,310-206-2465,,https://careprogram.ucla.edu,See website for office hours; 24/7 support through CAPS at 310-825-0768,UCLA students faculty and staff affected by sexual/gender-based violence,campus,2026-11-06
+RISE (Resilience In Your Student Experience) Center,peer wellness,310-825-9039,,https://risecenter.ucla.edu,Mon-Thu 9am-6pm; Fri 9am-4pm,UCLA students,campus,2026-11-06
+UCLA Depression Grand Challenge - Student Ambassadors,peer support / mental health,,,https://depression.ucla.edu/,Variable,UCLA students interested in mental health advocacy and research,campus,
+UCLA Active Minds,mental health advocacy student group,,,https://instagram.com/activemindsucla,Variable,UCLA students dedicated to mental health awareness and breaking stigma,campus,
+Bruin Consent Coalition,peer advocacy / support,,,https://bruinconsentcoalition.org/,Variable,UCLA students focused on sexual violence prevention and survivor advocacy,campus,
+Epsilon Eta (Environmental Honorary - mental health / wellness walks),student wellness group,,,https://www.instagram.com/uclaepsiloneta/,Variable,UCLA students promoting environmental and holistic well-being,campus,
 Mindful Awareness Research Center (MARC) - Student Programs,mindfulness / mental health,310-206-7503,,https://www.uclahealth.org/marc,Variable (workshops/drop-in sessions),UCLA students seeking mindfulness and stress-reduction resources,campus,

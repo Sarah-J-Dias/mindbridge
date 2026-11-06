@@ -7,8 +7,14 @@ data/
 ├── raw/                        # one plain-text .txt file per source document
 ├── Generalinfo.csv             # general mental-health information sources
 ├── conditions_and_signs.csv    # conditions, symptoms, and warning-sign sources
-└── resources.csv    # support resources the bot can point students to
+├── resources.csv               # support resources the bot can point students to
+├── wellness.csv                # short wellness tips (category, title, description, actionable_tip, source_url)
+└── quotes.csv                  # encouraging quotes (id, category, quote, image_link, quote_url)
 ```
+
+Only the two source catalogs have a `doc_id` column. Don't add a `doc_id`
+column to any other CSV here: `reconcile_raw_csv.py` treats every CSV with that
+column as a catalog and deletes rows that have no matching `.txt` file.
 
 The source catalogs use the same columns (`doc_id`, `title`, `url`,
 `organization`, `category`, `source`, `added_on`). Each `doc_id` points to a
