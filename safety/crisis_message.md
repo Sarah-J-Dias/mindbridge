@@ -2,6 +2,6 @@ It sounds like you might be going through something really painful, and you dese
 
 - **Call or text 988** — the Suicide & Crisis Lifeline, free and available 24/7.
 - **Call 911** if you or someone else is in immediate danger.
-- **UCLA students:** contact CAPS (Counseling and Psychological Services). *(Member 2: add the verified phone number and link.)*
+- **UCLA students:** call CAPS (Counseling and Psychological Services) at **310-825-0768**, 24/7 — [counseling.ucla.edu](https://counseling.ucla.edu)
 
 I'm an educational tool and can't provide crisis support, but the people at these services can.

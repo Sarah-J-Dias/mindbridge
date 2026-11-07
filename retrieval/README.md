@@ -1,6 +1,8 @@
 # retrieval/ — Vector database (Member 3)
 
-`build_index.py` reads every `.txt` file in `data/raw/`, splits it into chunks, turns each chunk into an embedding, and saves them in a local Chroma database (`chroma_db/`).
+`build_index.py` reads every `.txt` file in `data/raw/`, removes website clutter (menus, .gov banners), splits it into chunks on sentence boundaries, turns each chunk into an embedding, and saves them in a local Chroma database (`chroma_db/`).
+
+The raw files are one long line each, so the chunker splits on sentences rather than blank lines. Chunks stay under ~900 characters because the embedding model (`all-MiniLM-L6-v2`) only reads the first ~256 tokens of each chunk. If you see new clutter in search results, add a pattern to `BOILERPLATE_PATTERNS`.
 
 ## Run it
 
