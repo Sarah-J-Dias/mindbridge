@@ -66,6 +66,10 @@ streamlit run app/app.py           # opens the chat screen in your browser
 
 Without an `ANTHROPIC_API_KEY`, answers use the retrieved passages directly. With a key, the configured Anthropic model generates a concise answer grounded in those passages. Click **Sources** under an answer to reveal its retrieved source nodes. Chat history remains in browser session memory only.
 
+Streamlit's file watcher is disabled to avoid an optional `torchvision` import
+warning from Transformers' text-embedding dependencies. Restart Streamlit after
+editing app code to load changes.
+
 ## How we work
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before your first change — it walks through branches and pull requests step by step.
