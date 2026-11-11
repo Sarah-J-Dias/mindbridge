@@ -3,6 +3,7 @@
 Run with ``streamlit run app/app.py`` from the repository root.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from agents.pipeline import PipelineError, respond  # noqa: E402
+from retrieval.build_index import warm_embedding_model  # noqa: E402
 
 DISCLAIMER = (ROOT / "safety" / "disclaimer.md").read_text(encoding="utf-8")
 
@@ -23,6 +25,18 @@ with st.sidebar:
     st.subheader("About")
     st.info(DISCLAIMER)
     st.markdown("**In crisis?** Call or text **988**, or call **911**.")
+
+
+@st.cache_resource(show_spinner="Loading the search model...")
+def _preload_embedding_model():
+    warm_embedding_model()
+    return True
+
+
+if os.getenv("MINDBRIDGE_PRELOAD_EMBEDDINGS", "").strip().lower() in {
+    "1", "true", "yes", "on"
+}:
+    _preload_embedding_model()
 
 
 def show_sources(sources):

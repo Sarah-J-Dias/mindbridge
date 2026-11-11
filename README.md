@@ -64,7 +64,19 @@ python -m unittest discover -s tests -v
 streamlit run app/app.py           # opens the chat screen in your browser
 ```
 
+The index is stored in `chroma_db/`. Re-running the build command skips catalogs
+whose source data and indexing settings have not changed; changed catalogs alone
+are rebuilt. Use `python retrieval/build_index.py --force` to rebuild every
+catalog. `chroma_db/` is intentionally gitignored, so deployments must either
+build the index during deployment or preserve that directory on durable storage.
+
 Without an `ANTHROPIC_API_KEY`, answers use the retrieved passages directly. With a key, the configured Anthropic model generates a concise answer grounded in those passages. Click **Sources** under an answer to reveal its retrieved source nodes. Chat history remains in browser session memory only.
+
+For deployments that already have an index but need the embedding model cached,
+run `python retrieval/build_index.py --download-model` in the same environment
+used to run the app. To load the model into memory at app startup instead of on
+the first search, set `MINDBRIDGE_PRELOAD_EMBEDDINGS=true` in `.env`. This trades
+a slower initial app load for a faster first response.
 
 Streamlit's file watcher is disabled to avoid an optional `torchvision` import
 warning from Transformers' text-embedding dependencies. Restart Streamlit after

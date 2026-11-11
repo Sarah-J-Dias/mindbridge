@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import json
 from functools import lru_cache
 from pathlib import Path
 
@@ -27,6 +29,7 @@ CSV_CATALOGS = {
 }
 ROUTES = (*ARTICLE_CATALOGS, *CSV_CATALOGS)
 EMBED_MODEL = "all-MiniLM-L6-v2"
+INDEX_FORMAT_VERSION = 1
 
 
 class IndexNotBuiltError(RuntimeError):
@@ -190,7 +193,28 @@ def _embedding_function():
     )
 
 
-def build(chunk_size: int = 800) -> int:
+def warm_embedding_model() -> None:
+    """Load the embedding model, downloading it first if it is not cached."""
+    _embedding_function()
+
+
+def _records_fingerprint(
+    route: str, records: list[dict[str, str]], chunk_size: int
+) -> str:
+    payload = {
+        "index_format_version": INDEX_FORMAT_VERSION,
+        "embedding_model": EMBED_MODEL,
+        "chunk_size": chunk_size,
+        "route": route,
+        "records": records,
+    }
+    serialized = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def build(chunk_size: int = 800, force: bool = False) -> int:
     records_by_route = load_records(chunk_size)
     total_records = sum(len(records) for records in records_by_route.values())
     if total_records == 0:
@@ -199,25 +223,55 @@ def build(chunk_size: int = 800) -> int:
         )
 
     client = _client()
-    embedding_function = _embedding_function()
     existing = {
         item if isinstance(item, str) else item.name
         for item in client.list_collections()
     }
-    managed_names = {collection_name(route) for route in ROUTES}
-    for name in managed_names | {"mindbridge"}:
-        if name in existing:
-            client.delete_collection(name)
+    if "mindbridge" in existing:
+        client.delete_collection("mindbridge")
 
-    total_chunks = 0
+    embedding_function = None
+    indexed_records = 0
+    rebuilt_routes = 0
+    unchanged_routes = 0
     for route, records in records_by_route.items():
+        name = collection_name(route)
         if not records:
+            if name in existing:
+                client.delete_collection(name)
             print(f"  {route}: no records")
             continue
+
+        fingerprint = _records_fingerprint(route, records, chunk_size)
+        metadata = {
+            "hnsw:space": "cosine",
+            "index_format_version": INDEX_FORMAT_VERSION,
+            "embedding_model": EMBED_MODEL,
+            "chunk_size": chunk_size,
+            "content_fingerprint": fingerprint,
+        }
+        if not force and name in existing:
+            collection = client.get_collection(name)
+            current_metadata = collection.metadata or {}
+            metadata_matches = all(
+                current_metadata.get(key) == value
+                for key, value in metadata.items()
+            )
+            if metadata_matches and collection.count() == len(records):
+                unchanged_routes += 1
+                print(f"  {route}: unchanged, skipped {len(records)} records")
+                continue
+            client.delete_collection(name)
+        elif name in existing:
+            client.delete_collection(name)
+
+        if embedding_function is None:
+            embedding_function = _embedding_function()
+
         collection = client.create_collection(
-            name=collection_name(route),
+            name=name,
             embedding_function=embedding_function,
-            metadata={"hnsw:space": "cosine"},
+            metadata=metadata,
         )
         collection.add(
             ids=[record["id"] for record in records],
@@ -230,11 +284,15 @@ def build(chunk_size: int = 800) -> int:
                 for record in records
             ],
         )
-        total_chunks += len(records)
-        print(f"  {route}: {len(records)} records")
+        indexed_records += len(records)
+        rebuilt_routes += 1
+        print(f"  {route}: indexed {len(records)} records")
 
-    print(f"Indexed {total_chunks} records across {len(ROUTES)} routes in {DB_DIR}")
-    return total_chunks
+    print(
+        f"Index contains {total_records} records across {len(ROUTES)} routes "
+        f"({rebuilt_routes} rebuilt, {unchanged_routes} unchanged) in {DB_DIR}"
+    )
+    return indexed_records
 
 
 def search(query: str, k: int = 4, route: str = "generalinfo") -> list[dict]:
@@ -277,13 +335,27 @@ def search(query: str, k: int = 4, route: str = "generalinfo") -> list[dict]:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--query", help="search a catalog instead of rebuilding")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--query", help="search a catalog instead of building")
+    action.add_argument(
+        "--download-model",
+        action="store_true",
+        help="download and initialize the embedding model without building indexes",
+    )
     parser.add_argument("--route", choices=ROUTES, default="generalinfo")
     parser.add_argument("--chunk-size", type=int, default=800)
+    parser.add_argument(
+        "--force", action="store_true", help="rebuild every catalog collection"
+    )
     args = parser.parse_args()
+    if args.force and (args.query or args.download_model):
+        parser.error("--force can only be used while building indexes")
     if args.query:
         for index, hit in enumerate(search(args.query, route=args.route), 1):
             print(f"\n[{index}] {hit['title']} ({hit['organization']})")
             print(hit["text"][:300] + ("..." if len(hit["text"]) > 300 else ""))
+    elif args.download_model:
+        warm_embedding_model()
+        print(f"Embedding model {EMBED_MODEL} is ready.")
     else:
-        build(args.chunk_size)
+        build(args.chunk_size, force=args.force)

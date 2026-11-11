@@ -7,6 +7,43 @@ from agents import pipeline
 from retrieval import build_index
 
 
+class _MemoryCollection:
+    def __init__(self, metadata):
+        self.metadata = metadata
+        self.add_calls = 0
+        self.record_count = 0
+
+    def add(self, ids, **_kwargs):
+        self.add_calls += 1
+        self.record_count += len(ids)
+
+    def count(self):
+        return self.record_count
+
+
+class _MemoryChromaClient:
+    def __init__(self):
+        self.collections = {}
+        self.deleted = []
+        self.created = []
+
+    def list_collections(self):
+        return [SimpleNamespace(name=name) for name in self.collections]
+
+    def get_collection(self, name):
+        return self.collections[name]
+
+    def delete_collection(self, name):
+        self.deleted.append(name)
+        del self.collections[name]
+
+    def create_collection(self, name, embedding_function, metadata):
+        self.created.append(name)
+        collection = _MemoryCollection(metadata)
+        self.collections[name] = collection
+        return collection
+
+
 class RoutingTests(unittest.TestCase):
     def test_routes_to_all_five_catalogs(self):
         examples = {
@@ -92,6 +129,81 @@ class RoutingTests(unittest.TestCase):
 
 
 class RetrievalCatalogTests(unittest.TestCase):
+    @staticmethod
+    def _sample_records():
+        return {
+            route: [{
+                "id": f"{route}-1",
+                "text": f"Text for {route}",
+                "title": f"Title for {route}",
+                "url": "",
+                "organization": "Test",
+                "category": route,
+            }]
+            for route in build_index.ROUTES
+        }
+
+    def test_build_skips_unchanged_collections_without_loading_model(self):
+        records = self._sample_records()
+        client = _MemoryChromaClient()
+        with (
+            patch.object(build_index, "load_records", return_value=records),
+            patch.object(build_index, "_client", return_value=client),
+            patch.object(build_index, "_embedding_function", return_value=object()) as model,
+        ):
+            expected_count = sum(map(len, records.values()))
+            self.assertEqual(build_index.build(), expected_count)
+            self.assertEqual(model.call_count, 1)
+            add_calls = {
+                name: collection.add_calls
+                for name, collection in client.collections.items()
+            }
+
+            with patch.object(
+                build_index,
+                "_embedding_function",
+                side_effect=AssertionError("unchanged build loaded the model"),
+            ):
+                self.assertEqual(build_index.build(), 0)
+
+        self.assertEqual(add_calls, {
+            name: 1 for name in client.collections
+        })
+        self.assertEqual(
+            {name: collection.add_calls for name, collection in client.collections.items()},
+            add_calls,
+        )
+        self.assertEqual(client.deleted, [])
+
+    def test_build_rebuilds_changed_catalog_only_and_force_rebuilds_all(self):
+        records = self._sample_records()
+        client = _MemoryChromaClient()
+        with (
+            patch.object(build_index, "load_records", return_value=records),
+            patch.object(build_index, "_client", return_value=client),
+            patch.object(build_index, "_embedding_function", return_value=object()),
+        ):
+            build_index.build()
+
+            client.deleted.clear()
+            changed = self._sample_records()
+            changed["quotes"][0]["text"] = "Updated quote"
+            with patch.object(build_index, "load_records", return_value=changed):
+                self.assertEqual(build_index.build(), 1)
+            self.assertEqual(client.deleted, ["mindbridge_quotes"])
+            self.assertEqual(client.created[-1], "mindbridge_quotes")
+
+            client.deleted.clear()
+            with patch.object(build_index, "load_records", return_value=changed):
+                self.assertEqual(
+                    build_index.build(force=True),
+                    sum(map(len, changed.values())),
+                )
+        self.assertCountEqual(
+            client.deleted,
+            [build_index.collection_name(route) for route in build_index.ROUTES],
+        )
+
     def test_chunk_text_bounds_long_paragraphs_and_rejects_bad_sizes(self):
         text = "word " * 120
         chunks = build_index.chunk_text(text, chunk_size=40, overlap=8)
