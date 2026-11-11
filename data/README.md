@@ -7,13 +7,16 @@ data/
 ├── raw/                        # one plain-text .txt file per source document
 ├── Generalinfo.csv             # general mental-health information sources
 ├── conditions_and_signs.csv    # conditions, symptoms, and warning-sign sources
-└── resources.csv    # support resources the bot can point students to
+├── resources.csv               # support resources
+├── quotes.csv                  # inspirational quote catalog
+└── wellness.csv                # self-care and coping suggestions
 ```
 
 The source catalogs use the same columns (`doc_id`, `title`, `url`,
 `organization`, `category`, `source`, `added_on`). Each `doc_id` points to a
 text file in `raw/`; retrieval reads metadata from the general-information and
-conditions catalogs.
+conditions catalogs. The vector index also builds separate collections from
+`resources.csv`, `quotes.csv`, and `wellness.csv`.
 
 ## Approved sources
 

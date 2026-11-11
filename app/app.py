@@ -1,11 +1,8 @@
-"""MindBridge chat screen (Member 6).
+"""MindBridge chat screen.
 
-Run:  streamlit run app/app.py
-
-Week 1: get this running and change the look.
-Week 2: add the crisis banner styling and polish the sources area.
-Week 4: deploy to Streamlit Community Cloud.
+Run with ``streamlit run app/app.py`` from the repository root.
 """
+
 import sys
 from pathlib import Path
 
@@ -14,7 +11,7 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from agents.pipeline import respond  # noqa: E402
+from agents.pipeline import PipelineError, respond  # noqa: E402
 
 DISCLAIMER = (ROOT / "safety" / "disclaimer.md").read_text(encoding="utf-8")
 
@@ -27,27 +24,54 @@ with st.sidebar:
     st.info(DISCLAIMER)
     st.markdown("**In crisis?** Call or text **988**, or call **911**.")
 
-# Chat history lives only in this browser session — nothing is saved.
+
+def show_sources(sources):
+    with st.expander(f"Sources ({len(sources)})"):
+        for index, source in enumerate(sources, 1):
+            title = source.get("title") or "Source"
+            url = source.get("url")
+            if url:
+                st.markdown(f"{index}. [{title}]({url})")
+            else:
+                st.markdown(f"{index}. **{title}**")
+            organization = source.get("organization")
+            if organization:
+                st.caption(organization)
+            st.text(source.get("text", ""))
+
+
+# Chat history is held only in this browser session; it is not persisted.
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for m in st.session_state.messages:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        if message["role"] == "assistant" and message.get("sources"):
+            show_sources(message["sources"])
 
 if prompt := st.chat_input("Type your question..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    result = respond(prompt)
-    with st.chat_message("assistant"):
-        if result["route"] == "crisis":
-            st.error(result["answer"])
-        else:
-            st.markdown(result["answer"])
-        if result["sources"]:
-            with st.expander("Sources"):
-                for s in result["sources"]:
-                    st.markdown(f"- [{s['title']}]({s['url']})" if s.get("url") else f"- {s['title']}")
-    st.session_state.messages.append({"role": "assistant", "content": result["answer"]})
+    try:
+        result = respond(prompt)
+    except PipelineError as error:
+        answer = f"MindBridge could not answer this question. {error}"
+        with st.chat_message("assistant"):
+            st.error(answer)
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+    else:
+        with st.chat_message("assistant"):
+            if result["route"] == "crisis":
+                st.error(result["answer"])
+            else:
+                st.markdown(result["answer"])
+            if result["sources"]:
+                show_sources(result["sources"])
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": result["answer"],
+            "sources": result["sources"],
+        })

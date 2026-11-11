@@ -1,22 +1,32 @@
-# retrieval/ — Vector database (Member 3)
+# retrieval/ — Vector databases
 
-`build_index.py` reads every `.txt` file in `data/raw/`, splits it into chunks, turns each chunk into an embedding, and saves them in a local Chroma database (`chroma_db/`).
+`build_index.py` converts the curated article catalogs and three CSV catalogs
+into five local Chroma collections in `chroma_db/`:
 
-## Run it
+| Route | Catalog |
+| --- | --- |
+| `generalinfo` | `data/Generalinfo.csv` and matching files in `data/raw/` |
+| `conditions_and_signs` | `data/conditions_and_signs.csv` and matching raw files |
+| `resources` | `data/resources.csv` |
+| `quotes` | `data/quotes.csv` |
+| `wellness` | `data/wellness.csv` |
 
-```bash
-python retrieval/build_index.py                     # build the database
-python retrieval/build_index.py --query "signs of burnout"   # test a search
+Build or rebuild all collections from the repository root:
+
+```powershell
+python retrieval\build_index.py
 ```
 
-## Words to know
+Test a route after building:
 
-- **Chunk** — a short passage (a few paragraphs) cut from a document. We search chunks, not whole documents.
-- **Embedding** — a list of numbers that captures a chunk's meaning, so similar ideas end up close together.
-- **Vector database** — stores the embeddings and finds the chunks closest to a question.
+```powershell
+python retrieval\build_index.py --query "signs of burnout" --route conditions_and_signs
+python retrieval\build_index.py --query "campus counseling" --route resources
+```
 
-## Your Week 1–3 tasks
+The first build downloads the `all-MiniLM-L6-v2` embedding model if it is not
+already cached. `chroma_db/` is local and can be rebuilt from the catalogs.
 
-- Week 1: run the script on a couple of test files; explain chunks and embeddings in 3 sentences.
-- Week 2: load all docs; run 10 test searches; note which return useful chunks in `retrieval/notes.md`.
-- Week 3: try `--chunk-size 500` vs `--chunk-size 1000` and compare with Member 5.
+- **Chunk** — a bounded passage from an article; CSV entries are indexed as individual records.
+- **Embedding** — numbers representing text meaning, used to find similar passages.
+- **Vector database** — stores embeddings and returns the passages closest to a query.

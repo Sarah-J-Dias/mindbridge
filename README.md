@@ -18,14 +18,12 @@ Student message
  Safety agent ──crisis──► Fixed crisis response (988, 911, campus counseling)
       │ safe
       ▼
- Router agent ──resource──► Resource tool (data/resources.csv)
-      │        ──other────► Polite out-of-scope reply
-      │ info
+ Router agent ──► generalinfo | conditions/signs | resources | quotes | wellness
       ▼
- Retrieval agent (Chroma) → Answer agent (cites sources) → Self-check agent
+ Route-specific Chroma retrieval → Grounded answer prompt
       │
       ▼
- Reply in chat (answer + sources + disclaimer)
+ Reply in chat (answer + expandable source passages + disclaimer)
 ```
 
 ## Repo map — find your folder
@@ -33,8 +31,8 @@ Student message
 | Folder | Owner | What lives here |
 | --- | --- | --- |
 | `data/` | Members 1 + 2 | Source documents, `Generalinfo.csv`, `conditions_and_signs.csv`, `resources.csv` |
-| `retrieval/` | Member 3 | Script that chunks docs and builds the Chroma database |
-| `agents/` | Sarah | Safety, router, answer and self-check agents |
+| `retrieval/` | Member 3 | Script that indexes the five data catalogs into Chroma |
+| `agents/` | Sarah | Safety-first router and grounded answer pipeline |
 | `safety/` | Member 4 | Crisis keywords, crisis message, disclaimer, "never do" rules |
 | `eval/` | Member 5 | Test questions and the scorecard |
 | `app/` | Member 6 | Streamlit chat interface |
@@ -56,14 +54,17 @@ cd mindbridge
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env               # Sarah shares the API key privately — never commit it
+cp .env.example .env               # Optional: add your private Anthropic API key
 ```
 
-Check that it works:
+Build the local vector database once (the first run downloads the embedding model), then launch the app:
 ```bash
-python agents/safety.py            # runs the crisis-check self-test
+python retrieval/build_index.py
+python -m unittest discover -s tests -v
 streamlit run app/app.py           # opens the chat screen in your browser
 ```
+
+Without an `ANTHROPIC_API_KEY`, answers use the retrieved passages directly. With a key, the configured Anthropic model generates a concise answer grounded in those passages. Click **Sources** under an answer to reveal its retrieved source nodes. Chat history remains in browser session memory only.
 
 ## How we work
 
