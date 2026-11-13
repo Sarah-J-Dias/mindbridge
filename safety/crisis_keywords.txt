@@ -1,23 +1,73 @@
 # One phrase per line, lowercase. Lines starting with # are ignored.
-# Starter list — Member 4 expands this to 40+ phrases, including indirect ones.
+# Matching: lowercase, straight apostrophes, substring match. See README.
+# Add typo/slang variants (cant / can't). Log false alarms and misses in redteam_log.md.
+
 # Direct
 suicide
 suicidal
 kill myself
 killing myself
+kill my self
+killing my self
 end my life
 ending my life
 take my own life
 want to die
 wanna die
+want to be dead
+wanna be dead
 wish i were dead
 wish i was dead
+wish i was never born
+wish i were never born
+wish i never existed
+commit suicide
+committing suicide
+attempt suicide
+attempted suicide
+suicide attempt
+thinking about suicide
+thinking of suicide
+thoughts of suicide
+suicidal thoughts
+think about killing
+want to kill myself
+wanna kill myself
+going to kill myself
+gonna kill myself
+
+# Slang / abbreviations / euphemisms
+kms
+kys
+unalive
+unalive myself
+un-alive myself
+off myself
+offing myself
+end it all
+ending it all
+checking out for good
+go to sleep and never wake up
+sleep forever
+
+# Self-harm
 self-harm
 self harm
+self-injury
+self injury
 hurt myself
 hurting myself
+harm myself
+harming myself
 cut myself
 cutting myself
+cut my wrist
+cut my wrists
+slit my wrists
+burn myself
+burning myself
+punish myself physically
+starve myself to death
 overdose on purpose
 
 # Hopelessness / no future
@@ -25,23 +75,62 @@ no reason to live
 nothing to live for
 can't go on
 cant go on
+can't keep going
+cant keep going
+can't keep doing this
+cant keep doing this
 can't do this anymore
 cant do this anymore
+i can't do it anymore
+i cant do it anymore
+can't take it anymore
+cant take it anymore
 no point in living
 no point anymore
 life isn't worth living
 life is not worth living
+what's the point of living
+whats the point of living
+what's the point of anything
+whats the point of anything
+life is meaningless
+life is pointless
+nothing matters anymore
 i give up on life
 don't see a way out
 no way out
-can't take it anymore
-cant take it anymore
+trapped and can't escape
+trapped with no way out
+can't see a future
+cant see a future
+no future for me
+no hope left
+lost all hope
+hopeless
+i hate being alive
+hate my life
+done with life
+done with everything
+done with it all
+tired of being alive
+tired of living
 
 # Indirect / burden
 better off without me
 better off if i was gone
 better off if i were gone
 everyone would be better off
+everyone would be happier
+everyone would be happier if i
+world without me
+world would be better without me
+they'd be better off
+they would be better off without me
+easier for everyone if i
+no one would care if i
+nobody would miss me
+no one would miss me
+nobody would care if i died
 don't want to be here anymore
 dont want to be here anymore
 don't want to exist
@@ -50,14 +139,66 @@ wish i could disappear
 wish i wouldn't wake up
 i'm a burden
 im a burden
-tired of being alive
-tired of living
+i'm just a burden
+im just a burden
+i'm a liability
+tired of being a burden
+don't deserve to live
+dont deserve to live
+don't deserve to be alive
+dont deserve to be alive
+shouldn't be alive
+shouldnt be alive
+shouldn't exist
+shouldnt exist
 
 # Plans / means / goodbyes
 goodbye forever
 saying goodbye to everyone
-write a note
+this is goodbye
+final goodbye
+my final goodbye
+my last day
 suicide note
+leave a note
+leaving a note
+final note
+last note
+giving away my things
+giving away my stuff
+getting my affairs in order
+put my affairs in order
 how to die
 painless way to die
-have a plan to
+best way to die
+easiest way to die
+ways to die
+how to kill myself
+ways to kill myself
+how many pills to
+how many pills would
+how much would it take to overdose
+lethal dose
+overdose
+take all my pills
+swallow all my pills
+how to hang myself
+hang myself
+shoot myself
+jump off a bridge
+jump off the roof
+jump off a building
+bridge to jump
+
+# Third-person / worried about someone else
+my friend wants to die
+my roommate wants to die
+wants to kill themselves
+wants to kill himself
+wants to kill herself
+said they want to die
+said she wants to die
+said he wants to die
+suicidal friend
+friend is suicidal
+worried they will kill themselves
