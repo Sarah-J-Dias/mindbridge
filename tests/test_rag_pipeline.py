@@ -1,5 +1,7 @@
 import os
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -45,6 +47,26 @@ class _MemoryChromaClient:
 
 
 class RoutingTests(unittest.TestCase):
+    def test_project_env_overrides_inherited_environment(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / ".env").write_text(
+                "ANTHROPIC_API_KEY=file-key\n"
+                "MINDBRIDGE_PRELOAD_EMBEDDINGS=false\n",
+                encoding="utf-8",
+            )
+            with (
+                patch.object(pipeline, "ROOT", root),
+                patch.dict(os.environ, {
+                    "ANTHROPIC_API_KEY": "inherited-key",
+                    "MINDBRIDGE_PRELOAD_EMBEDDINGS": "true",
+                }),
+            ):
+                pipeline._load_project_env()
+
+                self.assertEqual(os.environ["ANTHROPIC_API_KEY"], "file-key")
+                self.assertEqual(os.environ["MINDBRIDGE_PRELOAD_EMBEDDINGS"], "false")
+
     def test_routes_to_all_five_catalogs(self):
         examples = {
             "Where can I talk to someone on campus?": "resources",

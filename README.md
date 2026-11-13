@@ -72,6 +72,11 @@ build the index during deployment or preserve that directory on durable storage.
 
 Without an `ANTHROPIC_API_KEY`, answers use the retrieved passages directly. With a key, the configured Anthropic model generates a concise answer grounded in those passages. Click **Sources** under an answer to reveal its retrieved source nodes. Chat history remains in browser session memory only.
 
+The app loads `.env` from the repository root at startup, and its values take
+precedence over inherited environment variables with the same names. After
+editing `.env`, stop and restart Streamlit to reload the settings; reopening
+the terminal is not required.
+
 For deployments that already have an index but need the embedding model cached,
 run `python retrieval/build_index.py --download-model` in the same environment
 used to run the app. To load the model into memory at app startup instead of on

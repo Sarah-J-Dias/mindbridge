@@ -11,7 +11,13 @@ from agents.safety import is_crisis, load_crisis_message
 from retrieval.build_index import IndexNotBuiltError, search
 
 ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT / ".env")
+
+
+def _load_project_env() -> None:
+    load_dotenv(ROOT / ".env", override=True)
+
+
+_load_project_env()
 
 ROUTE_TERMS = {
     "resources": (
