@@ -125,7 +125,7 @@ def _fallback_answer(sources: list[dict]) -> str:
             text = text[:1197].rstrip() + "..."
         passages.append(f"[{index}] {text}")
     return (
-        "Here are the most relevant passages from the library:\n\n"
+        "The model could not generate a response. Here are the most relevant passages from the library:\n\n"
         + "\n\n".join(passages)
     )
 
