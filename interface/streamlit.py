@@ -20,7 +20,11 @@ import streamlit as st  # noqa: E402
 ROOT = _HERE.parent
 sys.path.insert(0, str(ROOT))
 
-from agents.pipeline import PipelineError, respond  # noqa: E402
+from agents.pipeline import (  # noqa: E402
+    PipelineError,
+    generate_dashboard_sections,
+    respond,
+)
 from retrieval.build_index import (  # noqa: E402
     IndexNotBuiltError,
     search,
@@ -235,12 +239,18 @@ def safe_search(query: str, route: str) -> list[dict]:
         return []
 
 
-def build_dashboard(message: str) -> dict:
-    return {
+def build_dashboard(message: str, answer: str = "") -> dict:
+    dashboard = {
         "tips": safe_search(f"breathing exercise calming relax {message}", "wellness")[:3],
         "quote": (safe_search(message, "quotes") or [None])[0],
         "resources": safe_search(message, "resources")[:3],
     }
+    try:
+        sections = generate_dashboard_sections(message, answer, dashboard)
+    except (PipelineError, RuntimeError):
+        sections = {}
+    dashboard.update(sections)
+    return dashboard
 
 
 @st.cache_resource(show_spinner="Loading the search model...")
@@ -301,12 +311,28 @@ def render_dashboard(entry: dict) -> None:
     with c_quote:
         with card(330):
             st.markdown('<div class="card-title">💬 A thought for you</div>', unsafe_allow_html=True)
-            q = dash["quote"]
-            if q:
-                f = parse_fields(q.get("text", ""))
-                body = f.get("quote") or f.get("text") or clean(q.get("text", ""))
+            q = dash.get("quote")
+            model_quote = (
+                dash.get("quote")
+                if isinstance(dash.get("quote"), dict) and "author" in dash["quote"]
+                else None
+            )
+            if model_quote:
+                body = model_quote.get("text", "")
+                label = model_quote.get("author")
+            else:
+                body = ""
+                label = None
+
+            if not model_quote:
+                q = q if not isinstance(q, dict) or "quote" not in q else None
+                if q:
+                    f = parse_fields(q.get("text", ""))
+                    body = f.get("quote") or f.get("text") or clean(q.get("text", ""))
+                    label = f.get("author") or f.get("category")
+
+            if body:
                 st.markdown(f'<div class="quote">“{esc(clean(body)[:280])}”</div>', unsafe_allow_html=True)
-                label = f.get("author") or f.get("category")
                 if label:
                     st.markdown(f'<span class="chip">{esc(clean(label))}</span>', unsafe_allow_html=True)
             else:
@@ -317,12 +343,18 @@ def render_dashboard(entry: dict) -> None:
             st.markdown('<div class="card-title">📍 Support at UCLA</div>', unsafe_allow_html=True)
             if not dash["resources"]:
                 st.caption("None matched. See crisis lines in the sidebar.")
+            resource_summaries = {
+                clean(item.get("title", "")).casefold(): clean(item.get("summary", ""))
+                for item in dash.get("resource_summaries", [])
+                if isinstance(item, dict)
+            }
             for r in dash["resources"]:
                 f = parse_fields(r.get("text", ""))
                 title = clean(f.get("name") or f.get("title") or r.get("title") or "Resource")
                 url = r.get("url") or f.get("url")
                 name = f'<a href="{esc(url)}" target="_blank">{esc(title)}</a>' if url else esc(title)
                 meta = []
+                model_summary = resource_summaries.get(title.casefold())
                 if f.get("type"):
                     meta.append(f'<span class="chip">{esc(clean(f["type"]))}</span>')
                 if f.get("phone"):
@@ -331,15 +363,34 @@ def render_dashboard(entry: dict) -> None:
                     f'<div class="res"><b>{name}</b><br>{"".join(meta)}</div>',
                     unsafe_allow_html=True,
                 )
+                if model_summary:
+                    st.caption(model_summary)
 
     # ---- Row 2: what you can do ----
     st.markdown('<div class="section">What you can do right now</div>', unsafe_allow_html=True)
-    tips = dash["tips"]
+    tips = dash.get("tips", [])
+    model_tips = dash.get("tips")
+    if isinstance(model_tips, list) and model_tips and isinstance(model_tips[0], dict) and "actionable_tip" in model_tips[0]:
+        tips = model_tips
+    else:
+        tips = dash["tips"]
     if tips:
         cols = st.columns(len(tips))
         for col, tip in zip(cols, tips):
             with col:
                 with card(300):
+                    if isinstance(tip, dict) and tip.get("actionable_tip"):
+                        st.markdown(
+                            f'<div class="card-title">{esc(clean(tip.get("title") or "Try this"))}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        if tip.get("description"):
+                            st.write(clean(tip["description"]))
+                        st.markdown(
+                            f'<div class="try"><b>Try:</b> {esc(clean(tip["actionable_tip"]))}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        continue
                     f = parse_fields(tip.get("text", ""))
                     st.markdown(
                         f'<div class="card-title">{esc(clean(f.get("title") or tip.get("title") or "Tip"))}</div>',
@@ -363,7 +414,9 @@ def render_dashboard(entry: dict) -> None:
     # ---- Row 3: key points ----
     st.markdown('<div class="section">Key points</div>', unsafe_allow_html=True)
     with card():
-        points = to_bullets(result["answer"], n=3, max_chars=150, skip_heavy=True)
+        points = dash.get("key_points") or to_bullets(
+            result["answer"], n=3, max_chars=150, skip_heavy=True
+        )
         if points:
             for b in points:
                 st.markdown(f"- {b}")
@@ -406,7 +459,7 @@ if prompt:
                 entry = {
                     "prompt": prompt,
                     "result": result,
-                    "dashboard": build_dashboard(prompt),
+                    "dashboard": build_dashboard(prompt, result["answer"]),
                 }
         st.session_state.history.append(entry)
     except PipelineError as error:

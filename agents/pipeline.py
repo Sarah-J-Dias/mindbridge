@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -124,8 +125,125 @@ def _generate_answer(message: str, sources: list[dict]) -> str:
         block.text for block in response.content if block.type == "text"
     ).strip()
     if not text:
-        raise RuntimeError("The language model returned an empty answer.")
+        return _fallback_answer(sources)
     return text
+
+
+def generate_dashboard_sections(
+    message: str,
+    answer: str,
+    dashboard: dict,
+) -> dict:
+    """Generate grounded UI copy for the existing MindBridge dashboard cards."""
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not api_key or api_key == "your-key-here":
+        return {}
+
+    import anthropic
+
+    snippets = []
+    for label, records in (
+        ("Wellness tips", dashboard.get("tips", [])),
+        ("Quotes", dashboard.get("quote", []) if isinstance(dashboard.get("quote"), list) else ([dashboard["quote"]] if dashboard.get("quote") else [])),
+        ("Resources", dashboard.get("resources", [])),
+    ):
+        for index, record in enumerate(records, 1):
+            text = record.get("text", "")
+            title = record.get("title", "")
+            snippets.append(f"{label} [{index}] {title}\n{text}")
+
+    prompt = (
+        f"User question:\n{message}\n\n"
+        f"Model answer:\n{answer}\n\n"
+        "Curated dashboard passages:\n"
+        + "\n\n".join(snippets)
+        + "\n\nReturn valid JSON only with this shape:\n"
+        "{"
+        "\"key_points\":[\"short grounded point\", \"short grounded point\", \"short grounded point\"],"
+        "\"tips\":["
+        "{\"title\":\"short title\",\"description\":\"grounded description\",\"actionable_tip\":\"one immediate try\"}"
+        "],"
+        "\"quote\":{\"text\":\"verbatim quote text\",\"author\":\"author or category\"},"
+        "\"resource_summaries\":[{\"title\":\"exact resource title\",\"summary\":\"short grounded summary\"}]"
+        "}\n"
+        "Use only the supplied passages. Keep 1-3 key points and 1-3 tips. "
+        "Do not diagnose, recommend medication, invent resources or URLs, or omit uncertainty."
+    )
+
+    try:
+        response = anthropic.Anthropic(api_key=api_key).messages.create(
+            model=os.getenv("LLM_MODEL", "claude-haiku-5-5"),
+            max_tokens=700,
+            system=(
+                "You are preparing concise copy for a mental-health information dashboard. "
+                "Use only supplied source passages and preserve source meaning."
+            ),
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIError as error:
+        raise LanguageModelError(f"Anthropic dashboard request failed: {error}") from error
+
+    text = "\n".join(
+        block.text for block in response.content if block.type == "text"
+    ).strip()
+    if not text:
+        return {}
+
+    if text.startswith("```"):
+        text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    try:
+        sections = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(sections, dict):
+        return {}
+
+    key_points = sections.get("key_points", [])
+    if not isinstance(key_points, list):
+        key_points = []
+
+    tips = sections.get("tips", [])
+    if not isinstance(tips, list):
+        tips = []
+
+    quote = sections.get("quote")
+    if not isinstance(quote, dict):
+        quote = None
+
+    resource_summaries = sections.get("resource_summaries", [])
+    if not isinstance(resource_summaries, list):
+        resource_summaries = []
+
+    return {
+        "key_points": [
+            point.strip() for point in key_points
+            if isinstance(point, str) and point.strip()
+        ][:3],
+        "tips": [
+            {
+                "title": tip.get("title", "").strip(),
+                "description": tip.get("description", "").strip(),
+                "actionable_tip": tip.get("actionable_tip", "").strip(),
+            }
+            for tip in tips
+            if isinstance(tip, dict)
+            and isinstance(tip.get("title"), str)
+            and tip["title"].strip()
+        ][:3],
+        "quote": quote,
+        "resource_summaries": [
+            {
+                "title": item["title"].strip(),
+                "summary": item["summary"].strip(),
+            }
+            for item in resource_summaries
+            if isinstance(item, dict)
+            and isinstance(item.get("title"), str)
+            and isinstance(item.get("summary"), str)
+            and item["title"].strip()
+            and item["summary"].strip()
+        ][:3],
+    }
 
 
 def answer_from_library(message: str, source_route: str) -> dict:

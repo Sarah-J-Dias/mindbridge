@@ -128,6 +128,24 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("[1] A grounded passage", result["answer"])
         self.assertEqual(result["sources"], sources)
 
+    def test_empty_llm_answer_falls_back_to_source_passages(self):
+        sources = [{
+            "text": "A grounded fallback passage.",
+            "title": "Example source",
+            "organization": "Example organization",
+        }]
+        response = SimpleNamespace(content=[
+            SimpleNamespace(type="text", text="")
+        ])
+        with (
+            patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}),
+            patch("anthropic.Anthropic") as anthropic_client,
+        ):
+            anthropic_client.return_value.messages.create.return_value = response
+            answer = pipeline._generate_answer("A question", sources)
+
+        self.assertIn("[1] A grounded fallback passage", answer)
+
     def test_configured_llm_receives_grounded_prompt(self):
         source = {
             "text": "Retrieved evidence",
@@ -148,6 +166,32 @@ class RoutingTests(unittest.TestCase):
         request = anthropic_client.return_value.messages.create.call_args.kwargs
         self.assertIn("Do not diagnose", request["system"])
         self.assertIn("Retrieved evidence", request["messages"][0]["content"])
+
+    def test_dashboard_sections_are_generated_from_curated_sources(self):
+        response = SimpleNamespace(content=[
+            SimpleNamespace(type="text", text='{"key_points":["Point one"],'
+                                                '"tips":[{"title":"Pause","description":"Relax","actionable_tip":"Breathe slowly"}],'
+                                                '"quote":{"text":"A quote","author":"Source"},'
+                                                '"resource_summaries":[{"title":"Campus Support","summary":"Talk to someone"}]}')
+        ])
+        dashboard = {
+            "tips": [{"title": "Breathing", "text": "Breathe slowly"}],
+            "quote": {"title": "Quote", "text": "A quote"},
+            "resources": [{"title": "Campus Support", "text": "Counseling details"}],
+        }
+        with (
+            patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}),
+            patch("anthropic.Anthropic") as anthropic_client,
+        ):
+            anthropic_client.return_value.messages.create.return_value = response
+            sections = pipeline.generate_dashboard_sections(
+                "I am stressed", "A grounded answer", dashboard
+            )
+
+        self.assertEqual(sections["key_points"], ["Point one"])
+        self.assertEqual(sections["tips"][0]["title"], "Pause")
+        self.assertEqual(sections["quote"]["author"], "Source")
+        self.assertEqual(sections["resource_summaries"][0]["title"], "Campus Support")
 
 
 class RetrievalCatalogTests(unittest.TestCase):
