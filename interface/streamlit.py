@@ -45,10 +45,10 @@ def _stars(count: int, seed: int, w: int = 2560, h: int = 1600) -> str:
 THEME_CSS = """
 <style>
 .stApp {
-  background: radial-gradient(ellipse at 20% 0%, #252d6b 0%, #0d1131 45%, #05060f 100%) !important;
+  background: radial-gradient(ellipse at 20% 0%, #3b2a7a 0%, #1a1038 45%, #07040f 100%) !important;
 }
 [data-testid="stHeader"] {background: transparent !important;}
-[data-testid="stSidebar"] {background: rgba(9, 11, 30, .82) !important;}
+[data-testid="stSidebar"] {background: rgba(18, 8, 40, .84) !important;}
 
 /* ---- sky ---- */
 .sky {position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;}
@@ -74,17 +74,17 @@ THEME_CSS = """
 
 /* ---- header ---- */
 .hero h1 {margin: 0; font-size: 2.6rem; font-weight: 800;
-          background: linear-gradient(90deg, #b9c6ff, #9ff3e0);
+          background: linear-gradient(90deg, #d8b9ff, #ffb3e6);
           -webkit-background-clip: text; -webkit-text-fill-color: transparent;}
 .hero p {margin: 4px 0 0; opacity: .75;}
 .said {display: inline-block; margin: 18px 0 6px; padding: 8px 16px; border-radius: 999px;
-       background: rgba(130, 150, 255, .16); border: 1px solid rgba(160, 175, 255, .25);}
+       background: rgba(170, 120, 255, .18); border: 1px solid rgba(190, 150, 255, .3);}
 .said b {opacity: .7; font-weight: 600; margin-right: 6px;}
 
 /* ---- cards ---- */
 div[data-testid="stVerticalBlockBorderWrapper"] {
-  background: rgba(18, 22, 54, .62) !important;
-  border: 1px solid rgba(160, 175, 255, .18) !important;
+  background: rgba(34, 18, 66, .62) !important;
+  border: 1px solid rgba(190, 150, 255, .2) !important;
   border-radius: 18px !important;
   box-shadow: 0 8px 30px rgba(0, 0, 0, .35);
 }
@@ -92,9 +92,9 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .section {letter-spacing: .14em; text-transform: uppercase; font-size: .75rem;
           opacity: .65; margin: 26px 0 8px;}
 .chip {display: inline-block; padding: 2px 11px; border-radius: 999px; font-size: .75rem;
-       background: rgba(120, 140, 255, .2); color: #c9d2ff; margin: 0 6px 6px 0;}
+       background: rgba(170, 120, 255, .22); color: #e2ccff; margin: 0 6px 6px 0;}
 .try {margin-top: 8px; padding: 10px 12px; border-radius: 12px; font-size: .92rem;
-      background: rgba(90, 220, 190, .12); border-left: 3px solid #5adcbe;}
+      background: rgba(200, 140, 255, .14); border-left: 3px solid #c58bff;}
 .quote {font-size: 1.15rem; font-style: italic; line-height: 1.5; margin: 6px 0 10px;}
 .res {margin-bottom: 12px;}
 .res .meta {font-size: .82rem; opacity: .75;}
@@ -103,15 +103,15 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .breathe {display: flex; flex-direction: column; align-items: center;
           justify-content: center; height: 215px;}
 .orb {width: 70px; height: 70px; border-radius: 50%;
-      background: radial-gradient(circle at 35% 30%, #a8f7e6, #3aa68f);
-      box-shadow: 0 0 34px rgba(90, 220, 190, .65);
+      background: radial-gradient(circle at 35% 30%, #e6c8ff, #8a4fe0);
+      box-shadow: 0 0 34px rgba(180, 120, 255, .65);
       animation: orb 16s ease-in-out infinite;}
 @keyframes orb {
   0% {transform: scale(1);} 25% {transform: scale(1.9);}
   50% {transform: scale(1.9);} 75% {transform: scale(1);} 100% {transform: scale(1);}
 }
 .phases {position: relative; width: 100%; height: 22px; margin-top: 62px; text-align: center;}
-.phases span {position: absolute; left: 0; right: 0; opacity: 0; color: #bff5e8;
+.phases span {position: absolute; left: 0; right: 0; opacity: 0; color: #ecd9ff;
               animation: ph 16s infinite;}
 .phases span:nth-child(2) {animation-delay: 4s;}
 .phases span:nth-child(3) {animation-delay: 8s;}
