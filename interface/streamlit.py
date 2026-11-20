@@ -50,6 +50,26 @@ THEME_CSS = """
 [data-testid="stHeader"] {background: transparent !important;}
 [data-testid="stSidebar"] {background: rgba(9, 11, 30, .82) !important;}
 
+/* ---- loading indicator ---- */
+[data-testid="stSpinner"] {
+  position: fixed !important;
+  top: 76px;
+  left: 50%;
+  width: auto !important;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  z-index: 999999;
+  padding: 10px 16px !important;
+  border: 1px solid rgba(160, 175, 255, .22);
+  border-radius: 999px;
+  background: rgba(18, 22, 54, .92) !important;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, .38);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+[data-testid="stSpinner"] > div {width: auto !important;}
+
 /* ---- sky ---- */
 .sky {position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;}
 .stars {position: absolute; top: 0; left: 0; background: transparent; border-radius: 50%;
@@ -148,6 +168,8 @@ def esc(text) -> str:
 
 def card(height: int | None = None):
     try:
+        if height is None:
+            return st.container(border=True)
         return st.container(border=True, height=height)
     except TypeError:  # older Streamlit without the height option
         return st.container(border=True)
@@ -207,7 +229,9 @@ def to_bullets(text: str, n: int = 3, max_chars: int = 130, skip_heavy: bool = F
 def safe_search(query: str, route: str) -> list[dict]:
     try:
         return search(query, route=route) or []
-    except (IndexNotBuiltError, Exception):
+    except IndexNotBuiltError:
+        return []
+    except Exception:
         return []
 
 
@@ -368,8 +392,7 @@ st.markdown(
 st.caption("⚠️ MindBridge is not a psychiatrist or therapist and is not a replacement for professional care.")
 
 # History is held only in this browser session; it is not persisted.
-if "history" not in st.session_state:
-    st.session_state.history = []
+st.session_state.setdefault("history", [])
 
 prompt = st.chat_input("How are you feeling today?")
 

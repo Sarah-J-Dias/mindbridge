@@ -35,7 +35,7 @@ Student message
 | `agents/` | Sarah | Safety-first router and grounded answer pipeline |
 | `safety/` | Member 4 | Crisis keywords, crisis message, disclaimer, "never do" rules |
 | `eval/` | Member 5 | Test questions and the scorecard |
-| `app/` | Member 6 | Streamlit chat interface |
+| `interface/` | Member 6 | Streamlit chat and dashboard interface |
 | `showcase/` | Member 7 | Slides, poster, demo video, script |
 
 ## Quick start (first time)
@@ -61,7 +61,7 @@ Build the local vector database once (the first run downloads the embedding mode
 ```bash
 python retrieval/build_index.py
 python -m unittest discover -s tests -v
-streamlit run app/app.py           # opens the chat screen in your browser
+streamlit run interface/streamlit.py  # opens the MindBridge dashboard
 ```
 
 The index is stored in `chroma_db/`. Re-running the build command skips catalogs
