@@ -22,12 +22,9 @@ sys.path.insert(0, str(ROOT))
 
 from agents.pipeline import (  # noqa: E402
     PipelineError,
-    generate_dashboard_sections,
     respond,
 )
 from retrieval.build_index import (  # noqa: E402
-    IndexNotBuiltError,
-    search,
     warm_embedding_model,
 )
 
@@ -227,32 +224,6 @@ def to_bullets(text: str, n: int = 3, max_chars: int = 130, skip_heavy: bool = F
     return bullets
 
 
-# ---------------------------------------------------------------------------
-# Retrieval for the dashboard cards
-# ---------------------------------------------------------------------------
-def safe_search(query: str, route: str) -> list[dict]:
-    try:
-        return search(query, route=route) or []
-    except IndexNotBuiltError:
-        return []
-    except Exception:
-        return []
-
-
-def build_dashboard(message: str, answer: str = "") -> dict:
-    dashboard = {
-        "tips": safe_search(f"breathing exercise calming relax {message}", "wellness")[:3],
-        "quote": (safe_search(message, "quotes") or [None])[0],
-        "resources": safe_search(message, "resources")[:3],
-    }
-    try:
-        sections = generate_dashboard_sections(message, answer, dashboard)
-    except (PipelineError, RuntimeError):
-        sections = {}
-    dashboard.update(sections)
-    return dashboard
-
-
 @st.cache_resource(show_spinner="Loading the search model...")
 def _preload_embedding_model():
     warm_embedding_model()
@@ -276,7 +247,15 @@ with st.sidebar:
         "- Emergency: **911**\n"
         "- UCLA CAPS: see counseling.ucla.edu for the current 24/7 line"
     )
-    st.caption("Privacy: nothing is saved after you close this tab.")
+    if os.getenv("MINDBRIDGE_LOG_MODEL_RESPONSES", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }:
+        st.caption(
+            "Debug logging is enabled: raw model responses are saved locally in "
+            "logs/model_responses.jsonl and may contain sensitive details."
+        )
+    else:
+        st.caption("Privacy: chat history is not saved after you close this tab.")
     if st.button("Start new session", use_container_width=True):
         st.session_state.history = []
         st.rerun()
@@ -296,27 +275,38 @@ def show_sources(sources):
 
 
 def render_dashboard(entry: dict) -> None:
-    result, dash = entry["result"], entry["dashboard"]
+    result = entry["result"]
+    dash = {
+        "tips": [],
+        "quote": None,
+        "resources": [],
+        **result.get("dashboard", {}),
+    }
+
+    st.markdown('<div class="section">A response for you</div>', unsafe_allow_html=True)
+    with card():
+        st.markdown(result["answer"])
+    if result.get("sources"):
+        show_sources(result["sources"])
 
     # ---- Row 1: breathe | quote | resources ----
-    st.markdown('<div class="section">Take a moment</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section">If you need to, take a moment</div>', unsafe_allow_html=True)
     c_breathe, c_quote, c_res = st.columns(3)
 
     with c_breathe:
         with card(330):
             st.markdown('<div class="card-title">🫁 Breathe</div>', unsafe_allow_html=True)
             st.markdown(BREATHE_HTML, unsafe_allow_html=True)
-            st.caption("Box breathing: 4 seconds each step. Repeat 4 times.")
+            st.caption(
+                dash.get("breathing")
+                or "Box breathing: 4 seconds each step. Repeat 4 times."
+            )
 
     with c_quote:
         with card(330):
             st.markdown('<div class="card-title">💬 A thought for you</div>', unsafe_allow_html=True)
             q = dash.get("quote")
-            model_quote = (
-                dash.get("quote")
-                if isinstance(dash.get("quote"), dict) and "author" in dash["quote"]
-                else None
-            )
+            model_quote = dash.get("quote_copy")
             if model_quote:
                 body = model_quote.get("text", "")
                 label = model_quote.get("author")
@@ -348,7 +338,7 @@ def render_dashboard(entry: dict) -> None:
                 for item in dash.get("resource_summaries", [])
                 if isinstance(item, dict)
             }
-            for r in dash["resources"]:
+            for r in dash["resources"][:3]:
                 f = parse_fields(r.get("text", ""))
                 title = clean(f.get("name") or f.get("title") or r.get("title") or "Resource")
                 url = r.get("url") or f.get("url")
@@ -368,12 +358,7 @@ def render_dashboard(entry: dict) -> None:
 
     # ---- Row 2: what you can do ----
     st.markdown('<div class="section">What you can do right now</div>', unsafe_allow_html=True)
-    tips = dash.get("tips", [])
-    model_tips = dash.get("tips")
-    if isinstance(model_tips, list) and model_tips and isinstance(model_tips[0], dict) and "actionable_tip" in model_tips[0]:
-        tips = model_tips
-    else:
-        tips = dash["tips"]
+    tips = (dash.get("generated_tips") or dash["tips"])[:3]
     if tips:
         cols = st.columns(len(tips))
         for col, tip in zip(cols, tips):
@@ -411,29 +396,6 @@ def render_dashboard(entry: dict) -> None:
     else:
         st.caption("No tips matched this time.")
 
-    # ---- Row 3: key points ----
-    st.markdown('<div class="section">Key points</div>', unsafe_allow_html=True)
-    with card():
-        points = dash.get("key_points") or to_bullets(
-            result["answer"], n=3, max_chars=150, skip_heavy=True
-        )
-        if points:
-            for b in points:
-                st.markdown(f"- {b}")
-        else:
-            st.caption("No short summary available. Open the full answer below.")
-        if not os.getenv("ANTHROPIC_API_KEY", "").strip():
-            st.caption(
-                "Showing excerpts from the library. Add ANTHROPIC_API_KEY to .env "
-                "for a short written summary."
-            )
-
-    with st.expander("Read the full answer"):
-        st.markdown(result["answer"])
-    if result.get("sources"):
-        show_sources(result["sources"])
-
-
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
@@ -451,7 +413,7 @@ prompt = st.chat_input("How are you feeling today?")
 
 if prompt:
     try:
-        with st.spinner("Putting your dashboard together..."):
+        with st.spinner("Finding relevant support and personalizing your dashboard..."):
             result = respond(prompt)
             if result["route"] == "crisis":
                 entry = {"prompt": prompt, "crisis": True, "result": result}
@@ -459,7 +421,6 @@ if prompt:
                 entry = {
                     "prompt": prompt,
                     "result": result,
-                    "dashboard": build_dashboard(prompt, result["answer"]),
                 }
         st.session_state.history.append(entry)
     except PipelineError as error:

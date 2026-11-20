@@ -19,6 +19,16 @@ class StreamlitEntryPointTests(unittest.TestCase):
                 "text": "Example passage",
                 "url": "",
             }],
+            "dashboard": {
+                "generated_tips": [
+                    {
+                        "title": f"Tip {index}",
+                        "description": "A useful description.",
+                        "actionable_tip": "Take a small step.",
+                    }
+                    for index in range(1, 5)
+                ],
+            },
         }
         with (
             patch("agents.pipeline.respond", return_value=result),
@@ -33,6 +43,10 @@ class StreamlitEntryPointTests(unittest.TestCase):
         self.assertFalse(at.exception)
         self.assertTrue(at.session_state.history)
         self.assertIn("What is mental health?", at.session_state.history[-1]["prompt"])
+        self.assertIn("A grounded answer [1]", [item.value for item in at.markdown])
+        rendered = "\n".join(item.value for item in at.markdown)
+        self.assertIn("Tip 3", rendered)
+        self.assertNotIn("Tip 4", rendered)
 
     def test_crisis_input_uses_fixed_response_without_dashboard_search(self):
         result = {

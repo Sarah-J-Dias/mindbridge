@@ -70,7 +70,7 @@ are rebuilt. Use `python retrieval/build_index.py --force` to rebuild every
 catalog. `chroma_db/` is intentionally gitignored, so deployments must either
 build the index during deployment or preserve that directory on durable storage.
 
-Without an `ANTHROPIC_API_KEY`, answers use the retrieved passages directly. With a key, the configured Anthropic model generates a concise answer grounded in those passages. Click **Sources** under an answer to reveal its retrieved source nodes. Chat history remains in browser session memory only.
+Without an `ANTHROPIC_API_KEY`, answers use the retrieved passages directly. With a key, the configured Anthropic model generates a concise answer grounded in those passages. Click **Sources** under an answer to reveal its retrieved source nodes. Chat history remains in browser session memory only. For debugging, set `MINDBRIDGE_LOG_MODEL_RESPONSES=true` in `.env` to append raw Anthropic responses to `logs/model_responses.jsonl`; these responses may contain sensitive details. Logging is off by default, and the log directory is gitignored.
 
 The app loads `.env` from the repository root at startup, and its values take
 precedence over inherited environment variables with the same names. After
@@ -100,7 +100,7 @@ editing app code to load changes.
 2. Over-flag, never under-flag.
 3. Answers come only from our curated library, with citations.
 4. No diagnosis, no medication advice.
-5. No real personal data — test questions are written by the team, and chats are not saved.
+5. No real personal data — test questions are written by the team. Chats are not saved by default; opt-in model-response logging can contain sensitive details.
 
 Full rules: [`safety/README.md`](safety/README.md)
 

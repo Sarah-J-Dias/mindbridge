@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from pathlib import Path
@@ -121,9 +122,26 @@ class RoutingTests(unittest.TestCase):
         ):
             result = pipeline.respond("What are common signs of ADHD?")
 
-        search.assert_called_once_with(
-            "What are common signs of ADHD?", route="conditions_and_signs"
-        )
+        self.assertEqual(search.call_args_list, [
+            unittest.mock.call(
+                "What are common signs of ADHD?", route="conditions_and_signs"
+            ),
+            unittest.mock.call(
+                "What are common signs of ADHD? practical coping action",
+                k=6,
+                route="wellness",
+            ),
+            unittest.mock.call(
+                "encouragement for What are common signs of ADHD?",
+                k=6,
+                route="quotes",
+            ),
+            unittest.mock.call(
+                "support resources for What are common signs of ADHD?",
+                k=6,
+                route="resources",
+            ),
+        ])
         self.assertEqual(result["route"], "conditions_and_signs")
         self.assertIn("[1] A grounded passage", result["answer"])
         self.assertEqual(result["sources"], sources)
@@ -167,31 +185,129 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("Do not diagnose", request["system"])
         self.assertIn("Retrieved evidence", request["messages"][0]["content"])
 
-    def test_dashboard_sections_are_generated_from_curated_sources(self):
+    def test_answer_and_dashboard_are_generated_in_one_grounded_request(self):
         response = SimpleNamespace(content=[
-            SimpleNamespace(type="text", text='{"key_points":["Point one"],'
-                                                '"tips":[{"title":"Pause","description":"Relax","actionable_tip":"Breathe slowly"}],'
+            SimpleNamespace(type="text", text='{"answer":"A grounded reply [1]",'
+                                                '"tips":[{"title":"Pause","description":"Relax",'
+                                                '"actionable_tip":"Breathe slowly"}],'
+                                                '"breathing":"Take a slow breath.",'
                                                 '"quote":{"text":"A quote","author":"Source"},'
-                                                '"resource_summaries":[{"title":"Campus Support","summary":"Talk to someone"}]}')
+                                                '"resource_summaries":[{"title":"Campus Support",'
+                                                '"summary":"Talk to someone"}]}')
         ])
-        dashboard = {
+        candidates = {
             "tips": [{"title": "Breathing", "text": "Breathe slowly"}],
-            "quote": {"title": "Quote", "text": "A quote"},
+            "quotes": [{"title": "Quote", "text": "A quote"}],
             "resources": [{"title": "Campus Support", "text": "Counseling details"}],
         }
+        sources = [{
+            "title": "Grounding skills",
+            "text": "Slow breathing can help someone feel calmer.",
+            "organization": "Example",
+        }]
         with (
             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}),
             patch("anthropic.Anthropic") as anthropic_client,
         ):
             anthropic_client.return_value.messages.create.return_value = response
-            sections = pipeline.generate_dashboard_sections(
-                "I am stressed", "A grounded answer", dashboard
+            answer, sections = pipeline._generate_dashboard_response(
+                "I am stressed", sources, candidates
             )
 
-        self.assertEqual(sections["key_points"], ["Point one"])
-        self.assertEqual(sections["tips"][0]["title"], "Pause")
-        self.assertEqual(sections["quote"]["author"], "Source")
+        self.assertEqual(answer, "A grounded reply [1]")
+        self.assertEqual(sections["generated_tips"][0]["title"], "Pause")
+        self.assertEqual(sections["quote_copy"]["author"], "Source")
+        self.assertEqual(sections["breathing"], "Take a slow breath.")
         self.assertEqual(sections["resource_summaries"][0]["title"], "Campus Support")
+        self.assertEqual(anthropic_client.return_value.messages.create.call_count, 1)
+        prompt = anthropic_client.return_value.messages.create.call_args.kwargs[
+            "messages"
+        ][0]["content"]
+        self.assertIn("natural-language response", prompt)
+        self.assertIn("Cite every factual claim from Answer sources", prompt)
+
+    def test_plain_natural_language_model_response_is_not_replaced_by_passages(self):
+        response = SimpleNamespace(content=[
+            SimpleNamespace(
+                type="text",
+                text="Midterms can feel overwhelming. Try breaking your study plan "
+                     "into smaller steps and reach out to someone you trust [1].",
+            )
+        ])
+        candidates = {"tips": [], "quotes": [], "resources": []}
+        sources = [{
+            "title": "Coping with stress",
+            "text": "Break tasks into smaller steps and talk to someone you trust.",
+        }]
+        with (
+            patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}),
+            patch("anthropic.Anthropic") as anthropic_client,
+        ):
+            anthropic_client.return_value.messages.create.return_value = response
+            answer, dashboard = pipeline._generate_dashboard_response(
+                "I feel overwhelmed about midterms", sources, candidates
+            )
+
+        self.assertIn("Midterms can feel overwhelming.", answer)
+        self.assertNotIn("Here are the most relevant passages", answer)
+        self.assertEqual(dashboard, {})
+
+    def test_complete_answer_is_recovered_from_truncated_json(self):
+        response = SimpleNamespace(content=[
+            SimpleNamespace(
+                type="text",
+                text='{"answer":"You can make this feel more manageable by choosing '
+                     'one small study task and taking a short break afterward [1]",'
+                     '"tips":[{"title":"Plan",',
+            )
+        ])
+        candidates = {"tips": [], "quotes": [], "resources": []}
+        sources = [{
+            "title": "Coping with stress",
+            "text": "Break tasks into smaller steps.",
+        }]
+        with (
+            patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}),
+            patch("anthropic.Anthropic") as anthropic_client,
+        ):
+            anthropic_client.return_value.messages.create.return_value = response
+            answer, dashboard = pipeline._generate_dashboard_response(
+                "I feel overwhelmed about midterms", sources, candidates
+            )
+
+        self.assertIn("one small study task", answer)
+        self.assertNotIn("Here are the most relevant passages", answer)
+        self.assertEqual(dashboard, {})
+
+    def test_raw_model_response_logging_is_opt_in_and_preserves_api_payload(self):
+        response = SimpleNamespace(
+            model_dump=lambda mode: {
+                "id": "msg_test",
+                "content": [{"type": "text", "text": "Generated response"}],
+            }
+        )
+        with TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "logs" / "model_responses.jsonl"
+            with (
+                patch.object(pipeline, "_MODEL_RESPONSE_LOG", log_path),
+                patch.dict(os.environ, {"MINDBRIDGE_LOG_MODEL_RESPONSES": "false"}),
+            ):
+                pipeline._log_model_response(response, "test-model")
+                self.assertFalse(log_path.exists())
+
+                with patch.dict(
+                    os.environ, {"MINDBRIDGE_LOG_MODEL_RESPONSES": "true"}
+                ):
+                    pipeline._log_model_response(response, "test-model")
+
+            entry = json.loads(log_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(entry["model"], "test-model")
+        self.assertEqual(entry["response"]["id"], "msg_test")
+        self.assertEqual(
+            entry["response"]["content"][0]["text"], "Generated response"
+        )
+        self.assertTrue(entry["timestamp_utc"])
 
 
 class RetrievalCatalogTests(unittest.TestCase):
