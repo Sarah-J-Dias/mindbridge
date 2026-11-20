@@ -17,6 +17,7 @@ from retrieval.build_index import IndexNotBuiltError, search
 ROOT = Path(__file__).resolve().parent.parent
 _MODEL_RESPONSE_LOG = ROOT / "logs" / "model_responses.jsonl"
 _MODEL_RESPONSE_LOG_LOCK = threading.Lock()
+LLM_MAX_OUTPUT_TOKENS = 4096
 
 
 def _load_project_env() -> None:
@@ -144,32 +145,6 @@ def _answer_prompt(message: str, sources: list[dict]) -> str:
     )
 
 
-def _generate_answer(message: str, sources: list[dict]) -> str:
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if not api_key or api_key == "your-key-here":
-        return _fallback_answer(sources)
-
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=api_key)
-    try:
-        response = client.messages.create(
-            model=os.getenv("LLM_MODEL", "claude-haiku-5-5"),
-            max_tokens=500,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": _answer_prompt(message, sources)}],
-        )
-    except anthropic.APIError as error:
-        raise LanguageModelError(f"Anthropic request failed: {error}") from error
-    _log_model_response(response, os.getenv("LLM_MODEL", "claude-haiku-5-5"))
-    text = "\n".join(
-        block.text for block in response.content if block.type == "text"
-    ).strip()
-    if not text:
-        return _fallback_answer(sources)
-    return text
-
-
 def _dashboard_candidates(message: str) -> dict:
     """Retrieve prompt-specific candidates for the dashboard cards."""
     queries = {
@@ -248,7 +223,7 @@ def _generate_dashboard_response(
     try:
         response = anthropic.Anthropic(api_key=api_key).messages.create(
             model=os.getenv("LLM_MODEL", "claude-haiku-5-5"),
-            max_tokens=900,
+            max_tokens=LLM_MAX_OUTPUT_TOKENS,
             system=(
                 "You are MindBridge, an educational mental-health information assistant. "
                 "Be calm, concise, nonjudgmental, and preserve the meaning of sources. "

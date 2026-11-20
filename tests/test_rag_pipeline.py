@@ -184,6 +184,7 @@ class RoutingTests(unittest.TestCase):
         request = anthropic_client.return_value.messages.create.call_args.kwargs
         self.assertIn("Do not diagnose", request["system"])
         self.assertIn("Retrieved evidence", request["messages"][0]["content"])
+        self.assertEqual(request["max_tokens"], pipeline.LLM_MAX_OUTPUT_TOKENS)
 
     def test_answer_and_dashboard_are_generated_in_one_grounded_request(self):
         response = SimpleNamespace(content=[
@@ -220,9 +221,9 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(sections["breathing"], "Take a slow breath.")
         self.assertEqual(sections["resource_summaries"][0]["title"], "Campus Support")
         self.assertEqual(anthropic_client.return_value.messages.create.call_count, 1)
-        prompt = anthropic_client.return_value.messages.create.call_args.kwargs[
-            "messages"
-        ][0]["content"]
+        request = anthropic_client.return_value.messages.create.call_args.kwargs
+        self.assertEqual(request["max_tokens"], pipeline.LLM_MAX_OUTPUT_TOKENS)
+        prompt = request["messages"][0]["content"]
         self.assertIn("natural-language response", prompt)
         self.assertIn("Cite every factual claim from Answer sources", prompt)
 
